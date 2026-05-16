@@ -2161,7 +2161,7 @@ function MySpace({ xpApi, onClose }) {
     {key:"furniture", label:`Furniture (${invFurn.length})`, items:invFurn},
     {key:"walls",     label:`Walls (${invWalls.length})`, items:invWalls},
     {key:"floors",    label:`Floors (${invFloors.length})`, items:invFloors},
-    {key:"golden",    label:`Golden (${invGold.length})`, items:invGold},
+    {key:"golden",    label:`??? (${invGold.length})`, items:invGold, mystery:true},
   ];
   const currentTab = tabs.find(t=>t.key===bagTab) || tabs[0];
 
@@ -2209,7 +2209,7 @@ function MySpace({ xpApi, onClose }) {
           {tabs.map(t=><Pill key={t.key} active={bagTab===t.key} onClick={()=>setBagTab(t.key)} color="amber">{t.label}</Pill>)}
         </div>
         {currentTab.items.length===0
-          ? <p style={{fontSize:13,color:"#aaa8a2",textAlign:"center",padding:"1rem 0"}}>Level up to unlock {bagTab}</p>
+          ? <p style={{fontSize:13,color:"#aaa8a2",textAlign:"center",padding:"1rem 0",fontStyle:currentTab.mystery?"italic":"normal",letterSpacing:currentTab.mystery?2:0}}>{currentTab.mystery ? "???" : `Level up to unlock ${bagTab}`}</p>
           : <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill, minmax(74px, 1fr))",gap:10}}>
               {currentTab.items.map(item=>(
                 <div key={item.id} className="furn-item"
@@ -2253,60 +2253,82 @@ function MySpace({ xpApi, onClose }) {
 }
 
 // ============================================================
-// PROGRESS PAGE
+// HELP BUTTON  (small floating ? — opens a modal with sections)
 // ============================================================
-function Progress({ xpApi }) {
-  const { xp } = xpApi;
-  const habits = load("pd_habits",[]);
-  const entries = load("pd_time",[]);
-  const hydrationSettings = load("pd_hydration",{portion:250,goal:2000,theme:"teal"});
-  const hydrationLog = load("pd_hydration_log",[]);
-  const td = today();
-  function streak(c){ let s=0,d=new Date(); while(true){ const ds=d.toISOString().slice(0,10); if(c.includes(ds)){s++;d.setDate(d.getDate()-1);}else break; } return s; }
-  const longestStreak = habits.reduce((a,h)=>Math.max(a,streak(h.completions)),0);
-  const totalFocusSec = entries.reduce((a,e)=>a+e.secs,0);
-  const totalFocusHours = (totalFocusSec/3600).toFixed(1);
-  const waterToday = hydrationLog.filter(e=>e.date===td).reduce((a,e)=>a+e.ml,0);
-  const xpPct = Math.round((xp.xp/XP_PER_LEVEL)*100);
-  const stats = [
-    { label:"Total focus", value:`${totalFocusHours}h`, sub:"all sessions", color:"teal" },
-    { label:"Longest streak", value:`${longestStreak}`, sub:"days", color:"coral" },
-    { label:"Water today", value:`${waterToday}`, sub:`of ${hydrationSettings.goal} ml`, color:"sky" },
-    { label:"Level", value:`${xp.level}`, sub:`of ${MAX_LEVEL}`, color:"purple" },
+function HelpButton(){
+  const [open,setOpen] = useState(false);
+  const sections = [
+    {
+      title:"To-do",
+      body:"Add tasks with a due date, category, and urgency. The list auto-sorts: Critical → High → Medium → Low, then by closest due date inside each group. Ticking moves a task to the Archive. To re-open it, untick from there. The × in Archive just tidies it away — no XP lost."
+    },
+    {
+      title:"Time tracker",
+      body:"Two modes in settings: count up (open timer), or count down (set a length, auto-stops at zero). Activity name + category is logged each session."
+    },
+    {
+      title:"Habits",
+      body:"Add a habit, tick it off each day. The 7-day strip shows your week, and a streak badge appears after one day."
+    },
+    {
+      title:"Water",
+      body:"Set your portion size and daily goal in settings. Tap + to add, − to remove the last portion. The circle fills (with a slosh!) toward your goal."
+    },
+    {
+      title:"Mood",
+      body:"Tap one of the five faces to log today's mood. The calendar below shows what you logged each day. Tap a different face to overwrite today."
+    },
+    {
+      title:"My space",
+      body:"Reach My space from the Home button at the top right. As you level up, you unlock furniture, wallpapers, floors, and a few mysterious items. Open the bag (bottom-left of the room) and drag items into the room to place them. Drag back onto the bag to put away."
+    },
+    {
+      title:"XP & levels",
+      body:`Earn ${XP_PER_ACTION} XP per: todo completed · habit checked · daily water goal reached · each 10 min of tracked time · every 7-day habit streak. Reach ${XP_PER_LEVEL} XP to level up and unlock a new piece. Max level: ${MAX_LEVEL}.`
+    },
+    {
+      title:"Un-doing & XP",
+      body:"Un-checking a habit, un-archiving a todo, or deleting a logged session refunds the XP it gave you. If a refund drops you below a level, the item you got at that level goes back into your bag. Crossing off an already-archived todo does NOT take XP — it's just tidying."
+    },
+    {
+      title:"Settings & themes",
+      body:"Each page has its own Settings button in the top right with a colour-theme picker (and any page-specific options like portion size, timer mode, etc.)."
+    }
   ];
-  return (
-    <div style={{display:"flex",flexDirection:"column",gap:16}}>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:12}}>
-        {stats.map(s=>{
-          const c = COLORS[s.color];
-          return <Card key={s.label} style={{display:"flex",flexDirection:"column",gap:4,background:c.bg,border:`1px solid ${c.border}`}}>
-            <p style={{fontSize:12,color:c.text,margin:0,opacity:0.8}}>{s.label}</p>
-            <p style={{fontSize:28,fontWeight:500,margin:0,color:c.text}}>{s.value}</p>
-            <p style={{fontSize:11,color:c.text,margin:0,opacity:0.6}}>{s.sub}</p>
-          </Card>;
-        })}
+  return <>
+    <button onClick={()=>setOpen(true)} aria-label="Help" style={{
+      position:"fixed", right:14, bottom:14, width:38, height:38, borderRadius:"50%",
+      background:"#fff", border:"1.5px solid #b4b2a9", cursor:"pointer",
+      display:"flex", alignItems:"center", justifyContent:"center",
+      fontSize:18, fontWeight:500, color:"#665f55",
+      boxShadow:"0 2px 8px rgba(0,0,0,0.12)", zIndex:9000, padding:0
+    }}>?</button>
+    {open && <div onClick={()=>setOpen(false)} style={{
+      position:"fixed", inset:0, background:"rgba(0,0,0,0.45)", zIndex:9100,
+      display:"flex", alignItems:"center", justifyContent:"center", padding:16
+    }}>
+      <div onClick={e=>e.stopPropagation()} style={{
+        background:"#fff", borderRadius:20, padding:"1.25rem 1.25rem 1rem",
+        maxWidth:480, width:"100%", maxHeight:"85vh", overflowY:"auto",
+        border:"0.5px solid #d3d1c7"
+      }}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
+          <h3 style={{fontSize:17,fontWeight:500,margin:0}}>How it works</h3>
+          <button onClick={()=>setOpen(false)} style={{background:"none",border:"none",fontSize:22,color:"#888780",cursor:"pointer",padding:"0 6px",lineHeight:1}}>×</button>
+        </div>
+        <div style={{display:"flex",flexDirection:"column",gap:10}}>
+          {sections.map(s=>(
+            <div key={s.title} style={{padding:"10px 12px",background:"#faf7ef",borderRadius:12,border:"1px solid #ebe6d8"}}>
+              <p style={{fontSize:13,fontWeight:500,margin:"0 0 4px",color:"#3a3935"}}>{s.title}</p>
+              <p style={{fontSize:12,color:"#666",margin:0,lineHeight:1.55}}>{s.body}</p>
+            </div>
+          ))}
+        </div>
       </div>
-      <Card>
-        <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",marginBottom:8}}>
-          <p style={{fontSize:13,fontWeight:500,color:"#888780",margin:0}}>XP to next level</p>
-          <p style={{fontSize:13,color:COLORS.purple.text,margin:0,fontWeight:500}}>{xp.xp} / {XP_PER_LEVEL}</p>
-        </div>
-        <div className="bar-bg" style={{height:14,borderRadius:20,background:"#e8e6e0",overflow:"hidden"}}>
-          <div style={{height:"100%",width:`${xpPct}%`,background:`linear-gradient(90deg, ${COLORS.purple.mid}, ${COLORS.pink.mid})`,borderRadius:20,transition:"width 0.4s"}}/>
-        </div>
-        <p style={{fontSize:11,color:"#aaa8a2",marginTop:8,textAlign:"center"}}>
-          {xp.level>=MAX_LEVEL ? "Maximum level reached! ✨" : `${XP_PER_LEVEL-xp.xp} XP until level ${xp.level+1}`}
-        </p>
-      </Card>
-      <Card>
-        <p style={{fontSize:13,fontWeight:500,color:"#888780",margin:"0 0 6px"}}>How XP works</p>
-        <p style={{fontSize:12,color:"#888780",lineHeight:1.6,margin:0}}>
-          You earn {XP_PER_ACTION} XP per todo completed, habit checked, daily water goal reached, every 10 minutes of focus time (any combination), and every 7-day habit streak. Un-checking returns the XP. Once a todo is archived, crossing it off there is just tidying — no XP penalty.
-        </p>
-      </Card>
-    </div>
-  );
+    </div>}
+  </>;
 }
+
 
 // ============================================================
 // LEVEL-UP ANIMATIONS
@@ -2380,6 +2402,7 @@ function App() {
         </button>
       </div>
       <MySpace xpApi={xpApi} onClose={()=>setTab("todos")}/>
+      <HelpButton/>
       <LevelUpOverlay flash={xpApi.flash} onClose={()=>xpApi.setFlash(null)}/>
     </div>;
   }
@@ -2417,7 +2440,6 @@ function App() {
             ["habits","Habits"],
             ["hydration","Water"],
             ["mood","Mood"],
-            ["progress","Progress"],
           ].map(([k,label])=>{
             const active = tab===k;
             return <button key={k} className="tab-btn" onClick={()=>setTab(k)} style={{
@@ -2435,7 +2457,9 @@ function App() {
       {tab==="habits"&&<Habits xpApi={xpApi} awards={awards}/>}
       {tab==="hydration"&&<Hydration xpApi={xpApi} awards={awards}/>}
       {tab==="mood"&&<MoodLogger/>}
-      {tab==="progress"&&<Progress xpApi={xpApi}/>}
+
+      {/* Floating help button */}
+      <HelpButton/>
 
       <LevelUpOverlay flash={xpApi.flash} onClose={()=>xpApi.setFlash(null)}/>
     </div>
