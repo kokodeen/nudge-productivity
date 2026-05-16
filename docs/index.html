@@ -121,18 +121,37 @@ function rewardsForLevel(level){
 function useXP() {
   // Migrate old inventory/room items that lack kind/design (from earlier app version)
   function migrateItems(arr){
-    return arr.map(it=>{
+    if(!Array.isArray(arr)) return [];
+    return arr.filter(it => it && typeof it === 'object').map(it=>{
       if(it.kind) return it;
       // old item only had {id, level}; treat as furniture, design = level-1
       const lvl = typeof it.level==='number' ? it.level : 1;
       return { ...it, kind:"furniture", design: Math.max(0, Math.min(28, lvl-1)) };
     });
   }
-  const [xp,setXp] = useState(()=>load("pd_xp",{level:1, xp:0, totalGained:0}));
+  function safeLoadObj(key, fb){
+    const v = load(key, fb);
+    if(v && typeof v === 'object' && !Array.isArray(v)) return v;
+    return fb;
+  }
+  const [xp,setXp] = useState(()=>{
+    const v = safeLoadObj("pd_xp",{level:1, xp:0, totalGained:0});
+    return {
+      level: typeof v.level === 'number' ? v.level : 1,
+      xp: typeof v.xp === 'number' ? v.xp : 0,
+      totalGained: typeof v.totalGained === 'number' ? v.totalGained : 0,
+    };
+  });
   const [inv,setInv] = useState(()=>migrateItems(load("pd_inventory",[])));
   const [room,setRoom] = useState(()=>migrateItems(load("pd_room",[])));
-  const [activeWall,setActiveWall] = useState(()=>load("pd_wall",null));
-  const [activeFloor,setActiveFloor] = useState(()=>load("pd_floor",null));
+  const [activeWall,setActiveWall] = useState(()=>{
+    const v = load("pd_wall",null);
+    return (v && typeof v === 'object' && typeof v.design === 'number') ? v : null;
+  });
+  const [activeFloor,setActiveFloor] = useState(()=>{
+    const v = load("pd_floor",null);
+    return (v && typeof v === 'object' && typeof v.design === 'number') ? v : null;
+  });
   const [flash,setFlash] = useState(null);
   useEffect(()=>save("pd_xp",xp),[xp]);
   useEffect(()=>save("pd_inventory",inv),[inv]);
@@ -218,172 +237,653 @@ function FurnSVG({ design, size=48 }) {
   const c = COLORS[palette];
   const stroke = c.text, fill = c.bg, accent = c.mid, border = c.border;
   const archetype = FURN_NAMES[idx % FURN_NAMES.length];
+  // Common highlight + shadow colours derived from palette
+  const hi = "#ffffff";
+  const shadow = stroke;
   let body;
   switch(archetype){
     case "Cushion": body = <>
+      {/* drop shadow */}
+      <ellipse cx="32" cy="52" rx="22" ry="2.5" fill={shadow} opacity="0.15"/>
+      {/* main body */}
       <rect x="8" y="22" width="48" height="28" rx="14" fill={fill} stroke={stroke} strokeWidth="1.5"/>
-      <circle cx="32" cy="36" r="3.5" fill={accent}/>
+      {/* shading bottom curve */}
+      <path d="M10 40 Q32 50 54 40 Q54 50 50 50 L14 50 Q10 50 10 40 Z" fill={accent} opacity="0.18"/>
+      {/* seam stitches */}
+      <path d="M14 24 Q14 36 14 48 M50 24 Q50 36 50 48" stroke={accent} strokeWidth="0.8" strokeDasharray="1.5 2" fill="none" opacity="0.5"/>
+      {/* button + tassels */}
+      <circle cx="32" cy="36" r="4" fill={accent} stroke={stroke} strokeWidth="1"/>
+      <circle cx="32" cy="36" r="1.5" fill={fill}/>
+      <path d="M8 28 L4 26 L4 30 Z M56 28 L60 26 L60 30 Z M8 44 L4 42 L4 46 Z M56 44 L60 42 L60 46 Z" fill={accent}/>
+      {/* highlight */}
+      <ellipse cx="22" cy="28" rx="8" ry="2" fill={hi} opacity="0.45"/>
     </>; break;
+
     case "Plant": body = <>
-      <path d="M32 44 Q22 28 18 18 Q26 22 32 32 Q38 22 46 18 Q42 28 32 44 Z" fill={accent} stroke={stroke} strokeWidth="1.3"/>
-      <path d="M22 42 Q22 56 32 56 Q42 56 42 42 Z" fill={fill} stroke={stroke} strokeWidth="1.5"/>
+      <ellipse cx="32" cy="56" rx="14" ry="1.8" fill={shadow} opacity="0.18"/>
+      {/* leaves (layered, varied) */}
+      <path d="M32 44 Q26 30 18 18 Q24 26 32 32 Z" fill={accent} stroke={stroke} strokeWidth="1.3" strokeLinejoin="round"/>
+      <path d="M32 44 Q38 30 46 18 Q40 26 32 32 Z" fill={accent} stroke={stroke} strokeWidth="1.3" strokeLinejoin="round"/>
+      <path d="M32 44 Q22 36 14 30 Q22 36 30 38 Z" fill={accent} stroke={stroke} strokeWidth="1.2" strokeLinejoin="round" opacity="0.85"/>
+      <path d="M32 44 Q42 36 50 30 Q42 36 34 38 Z" fill={accent} stroke={stroke} strokeWidth="1.2" strokeLinejoin="round" opacity="0.85"/>
+      {/* leaf veins */}
+      <path d="M22 22 Q27 30 31 38 M42 22 Q37 30 33 38" stroke={stroke} strokeWidth="0.6" fill="none" opacity="0.55"/>
+      {/* pot */}
+      <path d="M20 42 L44 42 L42 56 L22 56 Z" fill={fill} stroke={stroke} strokeWidth="1.5" strokeLinejoin="round"/>
+      <ellipse cx="32" cy="42" rx="12" ry="2.2" fill={fill} stroke={stroke} strokeWidth="1.2"/>
+      <ellipse cx="32" cy="42" rx="10" ry="1.4" fill={accent} opacity="0.35"/>
+      {/* pot highlight */}
+      <path d="M22 44 Q22 52 24 56" stroke={hi} strokeWidth="1.2" opacity="0.5" fill="none"/>
     </>; break;
+
     case "Lamp": body = <>
-      <path d="M20 16 Q32 12 44 16 L40 32 Q32 34 24 32 Z" fill={fill} stroke={stroke} strokeWidth="1.5"/>
-      <line x1="32" y1="32" x2="32" y2="50" stroke={stroke} strokeWidth="1.5"/>
-      <ellipse cx="32" cy="52" rx="11" ry="3" fill={accent} stroke={stroke} strokeWidth="1.2"/>
+      <ellipse cx="32" cy="56" rx="14" ry="1.8" fill={shadow} opacity="0.18"/>
+      {/* shade */}
+      <path d="M20 16 Q32 12 44 16 L40 32 Q32 34 24 32 Z" fill={fill} stroke={stroke} strokeWidth="1.5" strokeLinejoin="round"/>
+      {/* shade pattern bands */}
+      <path d="M22 22 Q32 24 42 22" stroke={accent} strokeWidth="1" fill="none" opacity="0.6"/>
+      <path d="M23 28 Q32 30 41 28" stroke={accent} strokeWidth="1" fill="none" opacity="0.4"/>
+      {/* shade highlight */}
+      <path d="M22 18 Q32 16 26 32" stroke={hi} strokeWidth="1.4" fill="none" opacity="0.55"/>
+      {/* warm glow inside */}
+      <ellipse cx="32" cy="22" rx="6" ry="2" fill={COLORS.amber.mid} opacity="0.35"/>
+      {/* neck */}
+      <rect x="30" y="32" width="4" height="18" rx="1" fill={stroke}/>
+      {/* base */}
+      <ellipse cx="32" cy="52" rx="12" ry="3.2" fill={accent} stroke={stroke} strokeWidth="1.3"/>
+      <ellipse cx="32" cy="51" rx="10" ry="1.4" fill={hi} opacity="0.35"/>
+      <ellipse cx="32" cy="53" rx="10" ry="1" fill={shadow} opacity="0.25"/>
     </>; break;
+
     case "Bookshelf": body = <>
-      <rect x="14" y="12" width="36" height="40" rx="6" fill={fill} stroke={stroke} strokeWidth="1.5"/>
-      <line x1="16" y1="26" x2="48" y2="26" stroke={stroke} strokeWidth="1"/>
-      <line x1="16" y1="38" x2="48" y2="38" stroke={stroke} strokeWidth="1"/>
-      <rect x="18" y="16" width="4" height="9" rx="1" fill={accent}/>
-      <rect x="24" y="14" width="4" height="11" rx="1" fill={border}/>
-      <rect x="30" y="16" width="4" height="9" rx="1" fill={accent}/>
+      <rect x="12" y="56" width="40" height="2" rx="1" fill={shadow} opacity="0.2"/>
+      {/* frame */}
+      <rect x="14" y="12" width="36" height="44" rx="4" fill={fill} stroke={stroke} strokeWidth="1.5"/>
+      {/* shelves */}
+      <line x1="14" y1="26" x2="50" y2="26" stroke={stroke} strokeWidth="1.2"/>
+      <line x1="14" y1="40" x2="50" y2="40" stroke={stroke} strokeWidth="1.2"/>
+      {/* row 1 books */}
+      <rect x="17" y="16" width="4" height="9" rx="0.5" fill={accent} stroke={stroke} strokeWidth="0.6"/>
+      <rect x="22" y="14" width="4" height="11" rx="0.5" fill={border} stroke={stroke} strokeWidth="0.6"/>
+      <rect x="27" y="16" width="3" height="9" rx="0.5" fill={accent} stroke={stroke} strokeWidth="0.6"/>
+      <rect x="31" y="15" width="5" height="10" rx="0.5" fill={c.text} opacity="0.7" stroke={stroke} strokeWidth="0.6"/>
+      <rect x="37" y="17" width="4" height="8" rx="0.5" fill={accent} stroke={stroke} strokeWidth="0.6"/>
+      <rect x="42" y="14" width="3" height="11" rx="0.5" fill={border} stroke={stroke} strokeWidth="0.6"/>
+      {/* row 2 books leaning */}
+      <rect x="17" y="29" width="4" height="10" rx="0.5" fill={border} stroke={stroke} strokeWidth="0.6"/>
+      <rect x="22" y="30" width="5" height="9" rx="0.5" fill={accent} stroke={stroke} strokeWidth="0.6"/>
+      <g transform="rotate(-12 33 35)">
+        <rect x="29" y="29" width="4" height="11" rx="0.5" fill={c.text} opacity="0.7" stroke={stroke} strokeWidth="0.6"/>
+      </g>
+      <rect x="36" y="30" width="3" height="9" rx="0.5" fill={accent} stroke={stroke} strokeWidth="0.6"/>
+      {/* row 3 — a plant + clock */}
+      <ellipse cx="22" cy="52" rx="4" ry="2" fill={accent}/>
+      <path d="M20 50 Q22 44 24 50" stroke={c.green ? COLORS.green.mid : accent} strokeWidth="1.5" fill="none"/>
+      <circle cx="38" cy="48" r="4" fill={fill} stroke={stroke} strokeWidth="1"/>
+      <line x1="38" y1="48" x2="38" y2="45" stroke={stroke} strokeWidth="0.8"/>
+      <line x1="38" y1="48" x2="40" y2="48" stroke={stroke} strokeWidth="0.8"/>
     </>; break;
+
     case "Rug": body = <>
-      <ellipse cx="32" cy="36" rx="22" ry="10" fill={fill} stroke={stroke} strokeWidth="1.5"/>
-      <ellipse cx="32" cy="36" rx="14" ry="6" fill="none" stroke={accent} strokeWidth="1.4"/>
+      {/* outer */}
+      <ellipse cx="32" cy="38" rx="24" ry="11" fill={fill} stroke={stroke} strokeWidth="1.5"/>
+      {/* inner pattern bands */}
+      <ellipse cx="32" cy="38" rx="18" ry="8" fill="none" stroke={accent} strokeWidth="1.4"/>
+      <ellipse cx="32" cy="38" rx="12" ry="5" fill="none" stroke={accent} strokeWidth="1.2" strokeDasharray="2 1.5"/>
+      <ellipse cx="32" cy="38" rx="6" ry="2.5" fill={accent} opacity="0.5"/>
+      {/* fringes */}
+      <path d="M9 40 L7 42 M14 44 L13 46 M19 47 L19 49 M26 48 L26 50 M32 49 L32 51 M38 48 L38 50 M45 47 L45 49 M50 44 L51 46 M55 40 L57 42" stroke={stroke} strokeWidth="1" strokeLinecap="round"/>
+      {/* highlight */}
+      <ellipse cx="24" cy="33" rx="6" ry="1.5" fill={hi} opacity="0.4"/>
     </>; break;
+
     case "Cat": body = <>
-      <ellipse cx="32" cy="42" rx="14" ry="12" fill={fill} stroke={stroke} strokeWidth="1.5"/>
-      <path d="M20 32 Q22 22 26 30 Z" fill={fill} stroke={stroke} strokeWidth="1.5"/>
-      <path d="M38 30 Q42 22 44 32 Z" fill={fill} stroke={stroke} strokeWidth="1.5"/>
-      <circle cx="27" cy="40" r="1.5" fill={stroke}/>
-      <circle cx="37" cy="40" r="1.5" fill={stroke}/>
-      <path d="M30 44 Q32 46 34 44" stroke={stroke} strokeWidth="1.2" fill="none"/>
+      <ellipse cx="32" cy="56" rx="14" ry="1.6" fill={shadow} opacity="0.18"/>
+      {/* body */}
+      <ellipse cx="32" cy="44" rx="14" ry="12" fill={fill} stroke={stroke} strokeWidth="1.5"/>
+      {/* head */}
+      <circle cx="32" cy="32" r="10" fill={fill} stroke={stroke} strokeWidth="1.5"/>
+      {/* ears */}
+      <path d="M22 28 Q22 18 26 26 Z" fill={fill} stroke={stroke} strokeWidth="1.4" strokeLinejoin="round"/>
+      <path d="M42 28 Q42 18 38 26 Z" fill={fill} stroke={stroke} strokeWidth="1.4" strokeLinejoin="round"/>
+      <path d="M23 26 Q24 22 25 25 Z" fill={accent}/>
+      <path d="M41 26 Q40 22 39 25 Z" fill={accent}/>
+      {/* face — eyes (closed, sleepy) */}
+      <path d="M26 32 Q28 34 30 32" stroke={stroke} strokeWidth="1.4" fill="none" strokeLinecap="round"/>
+      <path d="M34 32 Q36 34 38 32" stroke={stroke} strokeWidth="1.4" fill="none" strokeLinecap="round"/>
+      {/* cheeks */}
+      <circle cx="26" cy="36" r="1.5" fill={COLORS.pink.mid} opacity="0.4"/>
+      <circle cx="38" cy="36" r="1.5" fill={COLORS.pink.mid} opacity="0.4"/>
+      {/* nose + mouth */}
+      <path d="M31 35 L33 35 L32 36.5 Z" fill={stroke}/>
+      <path d="M32 36.5 Q30 38 28 37 M32 36.5 Q34 38 36 37" stroke={stroke} strokeWidth="0.9" fill="none" strokeLinecap="round"/>
+      {/* paws */}
+      <ellipse cx="24" cy="54" rx="3" ry="2" fill={fill} stroke={stroke} strokeWidth="1.2"/>
+      <ellipse cx="40" cy="54" rx="3" ry="2" fill={fill} stroke={stroke} strokeWidth="1.2"/>
+      {/* tail curled */}
+      <path d="M44 46 Q52 44 50 52" stroke={stroke} strokeWidth="2.5" fill="none" strokeLinecap="round"/>
     </>; break;
+
     case "Clock": body = <>
-      <circle cx="32" cy="32" r="18" fill={fill} stroke={stroke} strokeWidth="1.5"/>
-      <line x1="32" y1="32" x2="32" y2="20" stroke={stroke} strokeWidth="1.5" strokeLinecap="round"/>
-      <line x1="32" y1="32" x2="40" y2="34" stroke={accent} strokeWidth="1.5" strokeLinecap="round"/>
-      <circle cx="32" cy="32" r="1.5" fill={stroke}/>
+      <circle cx="32" cy="56" r="2" fill={shadow} opacity="0.2"/>
+      {/* outer rim */}
+      <circle cx="32" cy="32" r="20" fill={accent} stroke={stroke} strokeWidth="1.5"/>
+      {/* face */}
+      <circle cx="32" cy="32" r="16" fill={fill} stroke={stroke} strokeWidth="1"/>
+      {/* highlight */}
+      <path d="M22 22 Q28 18 36 20" stroke={hi} strokeWidth="2" fill="none" opacity="0.6"/>
+      {/* hour markers */}
+      {[0,1,2,3,4,5,6,7,8,9,10,11].map(i=>{ const a=i*Math.PI/6 - Math.PI/2; const x1=32+Math.cos(a)*14, y1=32+Math.sin(a)*14, x2=32+Math.cos(a)*12, y2=32+Math.sin(a)*12; return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} stroke={stroke} strokeWidth={i%3===0?1.5:0.8} strokeLinecap="round"/>; })}
+      {/* hands */}
+      <line x1="32" y1="32" x2="32" y2="22" stroke={stroke} strokeWidth="2" strokeLinecap="round"/>
+      <line x1="32" y1="32" x2="40" y2="35" stroke={accent} strokeWidth="1.8" strokeLinecap="round"/>
+      <line x1="32" y1="32" x2="32" y2="38" stroke={COLORS.coral.mid} strokeWidth="0.8" strokeLinecap="round"/>
+      <circle cx="32" cy="32" r="2" fill={stroke}/>
+      <circle cx="32" cy="32" r="1" fill={fill}/>
+      {/* bells on top */}
+      <ellipse cx="24" cy="13" rx="3" ry="2.5" fill={accent} stroke={stroke} strokeWidth="1"/>
+      <ellipse cx="40" cy="13" rx="3" ry="2.5" fill={accent} stroke={stroke} strokeWidth="1"/>
     </>; break;
+
     case "Painting": body = <>
-      <rect x="12" y="14" width="40" height="30" rx="3" fill={fill} stroke={stroke} strokeWidth="1.5"/>
-      <circle cx="42" cy="22" r="3" fill={accent}/>
-      <path d="M14 40 L22 30 L30 34 L38 26 L50 40 Z" fill={border}/>
+      {/* frame */}
+      <rect x="10" y="12" width="44" height="34" rx="3" fill={accent} stroke={stroke} strokeWidth="1.5"/>
+      <rect x="13" y="15" width="38" height="28" rx="2" fill={fill}/>
+      {/* sky + sun */}
+      <rect x="13" y="15" width="38" height="14" fill={COLORS.sky.bg}/>
+      <circle cx="42" cy="22" r="3.5" fill={COLORS.amber.mid}/>
+      <circle cx="42" cy="22" r="5" fill={COLORS.amber.mid} opacity="0.3"/>
+      {/* clouds */}
+      <ellipse cx="20" cy="20" rx="4" ry="1.5" fill="#fff" opacity="0.85"/>
+      <ellipse cx="28" cy="18" rx="3" ry="1.2" fill="#fff" opacity="0.85"/>
+      {/* mountains */}
+      <path d="M13 32 L20 22 L26 30 L32 24 L40 32 Z" fill={border}/>
+      <path d="M13 32 L20 22 L24 28 Z" fill={shadow} opacity="0.25"/>
+      {/* ground */}
+      <rect x="13" y="29" width="38" height="14" fill={COLORS.green.bg}/>
+      <path d="M13 32 L40 32 L51 36 L51 43 L13 43 Z" fill={COLORS.green.bg}/>
+      <path d="M13 36 Q30 32 51 36" stroke={COLORS.green.mid} strokeWidth="1" fill="none"/>
+      {/* frame highlights at corners */}
+      <path d="M13 15 L51 15" stroke={hi} strokeWidth="1" opacity="0.5"/>
+      <path d="M13 15 L13 43" stroke={hi} strokeWidth="1" opacity="0.4"/>
+      {/* hanging string */}
+      <path d="M22 12 L32 6 L42 12" stroke={stroke} strokeWidth="0.8" fill="none"/>
     </>; break;
+
     case "Chair": body = <>
-      <rect x="18" y="12" width="24" height="28" rx="8" fill={fill} stroke={stroke} strokeWidth="1.5"/>
-      <rect x="18" y="36" width="24" height="6" rx="3" fill={accent} stroke={stroke} strokeWidth="1.2"/>
-      <line x1="22" y1="42" x2="22" y2="54" stroke={stroke} strokeWidth="1.5" strokeLinecap="round"/>
-      <line x1="38" y1="42" x2="38" y2="54" stroke={stroke} strokeWidth="1.5" strokeLinecap="round"/>
+      {/* shadow */}
+      <ellipse cx="32" cy="56" rx="14" ry="1.5" fill={shadow} opacity="0.2"/>
+      {/* back */}
+      <path d="M18 12 Q18 8 22 8 L42 8 Q46 8 46 12 L46 38 Q46 42 42 42 L22 42 Q18 42 18 38 Z" fill={fill} stroke={stroke} strokeWidth="1.5" strokeLinejoin="round"/>
+      {/* back cushion shading */}
+      <path d="M22 12 Q32 14 42 12 L42 24 Q32 26 22 24 Z" fill={accent} opacity="0.4"/>
+      {/* highlights */}
+      <path d="M22 12 Q24 16 22 36" stroke={hi} strokeWidth="1.2" fill="none" opacity="0.55"/>
+      {/* seat */}
+      <rect x="14" y="36" width="36" height="8" rx="4" fill={accent} stroke={stroke} strokeWidth="1.3"/>
+      <ellipse cx="32" cy="38" rx="14" ry="1.5" fill={hi} opacity="0.4"/>
+      {/* legs */}
+      <rect x="20" y="44" width="3" height="11" rx="1.5" fill={stroke}/>
+      <rect x="41" y="44" width="3" height="11" rx="1.5" fill={stroke}/>
+      {/* leg foot highlights */}
+      <ellipse cx="21.5" cy="54" rx="2" ry="1" fill={shadow} opacity="0.4"/>
+      <ellipse cx="42.5" cy="54" rx="2" ry="1" fill={shadow} opacity="0.4"/>
     </>; break;
+
     case "Table": body = <>
-      <ellipse cx="32" cy="26" rx="22" ry="6" fill={fill} stroke={stroke} strokeWidth="1.5"/>
-      <line x1="16" y1="28" x2="18" y2="52" stroke={stroke} strokeWidth="1.5" strokeLinecap="round"/>
-      <line x1="48" y1="28" x2="46" y2="52" stroke={stroke} strokeWidth="1.5" strokeLinecap="round"/>
+      <ellipse cx="32" cy="56" rx="22" ry="2" fill={shadow} opacity="0.2"/>
+      {/* tabletop */}
+      <ellipse cx="32" cy="24" rx="24" ry="7" fill={fill} stroke={stroke} strokeWidth="1.5"/>
+      <ellipse cx="32" cy="22" rx="22" ry="5.5" fill={accent} opacity="0.35"/>
+      <ellipse cx="22" cy="20" rx="8" ry="1.5" fill={hi} opacity="0.55"/>
+      {/* edge thickness */}
+      <path d="M8 24 Q8 28 32 28 Q56 28 56 24" stroke={stroke} strokeWidth="1.3" fill="none"/>
+      {/* legs */}
+      <path d="M14 28 Q14 40 16 54" stroke={stroke} strokeWidth="2.2" fill="none" strokeLinecap="round"/>
+      <path d="M50 28 Q50 40 48 54" stroke={stroke} strokeWidth="2.2" fill="none" strokeLinecap="round"/>
+      <path d="M30 28 Q30 42 30 54" stroke={stroke} strokeWidth="2" fill="none" strokeLinecap="round" opacity="0.6"/>
+      <path d="M34 28 Q34 42 34 54" stroke={stroke} strokeWidth="2" fill="none" strokeLinecap="round" opacity="0.6"/>
+      {/* tiny item on table */}
+      <ellipse cx="32" cy="20" rx="4" ry="1.5" fill={border}/>
+      <rect x="30" y="13" width="4" height="6" rx="1" fill={border} stroke={stroke} strokeWidth="0.7"/>
     </>; break;
+
     case "Window": body = <>
-      <rect x="14" y="12" width="36" height="40" rx="6" fill={fill} stroke={stroke} strokeWidth="1.5"/>
-      <line x1="32" y1="12" x2="32" y2="52" stroke={stroke} strokeWidth="1.2"/>
-      <line x1="14" y1="32" x2="50" y2="32" stroke={stroke} strokeWidth="1.2"/>
-      <circle cx="44" cy="20" r="3" fill={accent}/>
+      {/* frame */}
+      <rect x="12" y="10" width="40" height="44" rx="3" fill={accent} stroke={stroke} strokeWidth="1.5"/>
+      <rect x="15" y="13" width="34" height="38" rx="1.5" fill={COLORS.sky.bg}/>
+      {/* sky gradient — clouds */}
+      <ellipse cx="22" cy="22" rx="6" ry="2" fill="#fff" opacity="0.8"/>
+      <ellipse cx="38" cy="26" rx="5" ry="1.6" fill="#fff" opacity="0.7"/>
+      {/* moon/sun */}
+      <circle cx="42" cy="18" r="3.5" fill={COLORS.amber.mid}/>
+      <circle cx="42" cy="18" r="5" fill={COLORS.amber.mid} opacity="0.25"/>
+      {/* hills */}
+      <path d="M15 44 Q25 36 32 40 Q40 44 49 40 L49 51 L15 51 Z" fill={COLORS.green.bg}/>
+      <path d="M15 51 L49 51" stroke={COLORS.green.mid} strokeWidth="0.8"/>
+      {/* mullions */}
+      <line x1="32" y1="13" x2="32" y2="51" stroke={stroke} strokeWidth="1.3"/>
+      <line x1="15" y1="32" x2="49" y2="32" stroke={stroke} strokeWidth="1.3"/>
+      {/* sill */}
+      <rect x="10" y="51" width="44" height="4" rx="1.5" fill={stroke}/>
+      {/* curtain edges */}
+      <path d="M12 12 Q10 26 12 40 Q14 50 12 54 Z" fill={fill} stroke={stroke} strokeWidth="1" opacity="0.85"/>
+      <path d="M52 12 Q54 26 52 40 Q50 50 52 54 Z" fill={fill} stroke={stroke} strokeWidth="1" opacity="0.85"/>
     </>; break;
+
     case "Mug": body = <>
-      <path d="M20 22 L20 46 Q20 52 26 52 L36 52 Q42 52 42 46 L42 22 Z" fill={fill} stroke={stroke} strokeWidth="1.5"/>
-      <path d="M42 28 Q50 28 50 36 Q50 44 42 44" fill="none" stroke={stroke} strokeWidth="1.5"/>
-      <ellipse cx="31" cy="26" rx="9" ry="3" fill={accent}/>
+      <ellipse cx="32" cy="56" rx="12" ry="1.6" fill={shadow} opacity="0.2"/>
+      {/* body */}
+      <path d="M18 22 Q18 20 20 20 L44 20 Q46 20 46 22 L46 46 Q46 54 38 54 L26 54 Q18 54 18 46 Z" fill={fill} stroke={stroke} strokeWidth="1.5" strokeLinejoin="round"/>
+      {/* handle */}
+      <path d="M46 28 Q54 28 54 36 Q54 44 46 44" fill="none" stroke={stroke} strokeWidth="2"/>
+      <path d="M46 30 Q52 30 52 36 Q52 42 46 42" fill="none" stroke={accent} strokeWidth="1" opacity="0.6"/>
+      {/* rim */}
+      <ellipse cx="32" cy="22" rx="14" ry="3" fill={fill} stroke={stroke} strokeWidth="1.3"/>
+      {/* steaming coffee */}
+      <ellipse cx="32" cy="22" rx="11" ry="2" fill={c.text} opacity="0.7"/>
+      <ellipse cx="32" cy="21" rx="9" ry="1" fill={accent} opacity="0.7"/>
+      {/* steam */}
+      <path d="M26 14 Q24 10 26 6 Q28 10 26 14" stroke={stroke} strokeWidth="1" fill="none" opacity="0.5" strokeLinecap="round"/>
+      <path d="M32 12 Q30 8 32 4 Q34 8 32 12" stroke={stroke} strokeWidth="1" fill="none" opacity="0.5" strokeLinecap="round"/>
+      <path d="M38 14 Q36 10 38 6 Q40 10 38 14" stroke={stroke} strokeWidth="1" fill="none" opacity="0.5" strokeLinecap="round"/>
+      {/* highlight stripe */}
+      <path d="M22 26 Q22 36 22 48" stroke={hi} strokeWidth="1.4" opacity="0.55" fill="none"/>
+      {/* mug pattern */}
+      <ellipse cx="32" cy="40" rx="4" ry="3" fill="none" stroke={accent} strokeWidth="1.2"/>
+      <path d="M30 39 L31 41 L34 38" stroke={accent} strokeWidth="1.2" fill="none" strokeLinecap="round"/>
     </>; break;
+
     case "Candle": body = <>
-      <rect x="24" y="26" width="16" height="22" rx="4" fill={fill} stroke={stroke} strokeWidth="1.5"/>
-      <path d="M32 26 Q28 20 32 14 Q36 20 32 26" fill={accent} stroke={stroke} strokeWidth="1.2"/>
-      <ellipse cx="32" cy="48" rx="10" ry="2" fill={border}/>
+      <ellipse cx="32" cy="56" rx="14" ry="1.6" fill={shadow} opacity="0.2"/>
+      {/* candle holder */}
+      <path d="M22 48 L42 48 L40 54 L24 54 Z" fill={accent} stroke={stroke} strokeWidth="1.3" strokeLinejoin="round"/>
+      <ellipse cx="32" cy="48" rx="10" ry="2" fill={accent} stroke={stroke} strokeWidth="1"/>
+      <ellipse cx="32" cy="48" rx="8" ry="1.2" fill={hi} opacity="0.4"/>
+      {/* candle wax */}
+      <rect x="24" y="22" width="16" height="26" rx="2" fill={fill} stroke={stroke} strokeWidth="1.5"/>
+      <ellipse cx="32" cy="22" rx="8" ry="2.2" fill={border} stroke={stroke} strokeWidth="1.2"/>
+      <ellipse cx="32" cy="22" rx="6" ry="1.2" fill={accent} opacity="0.4"/>
+      {/* drip */}
+      <path d="M24 28 Q22 32 24 34 Q26 33 26 30" fill={fill} stroke={stroke} strokeWidth="1"/>
+      {/* highlight */}
+      <rect x="27" y="26" width="2" height="20" fill={hi} opacity="0.5"/>
+      {/* wick */}
+      <line x1="32" y1="22" x2="32" y2="17" stroke={stroke} strokeWidth="0.8"/>
+      {/* flame */}
+      <path d="M32 17 Q28 13 30 8 Q32 6 34 8 Q36 13 32 17" fill={COLORS.amber.mid} stroke={stroke} strokeWidth="0.9"/>
+      <path d="M32 15 Q30 12 31 9 Q32 8 33 9 Q34 12 32 15" fill={COLORS.coral.mid}/>
+      <ellipse cx="32" cy="11" rx="0.8" ry="1.5" fill="#fff"/>
     </>; break;
+
     case "Plushie": body = <>
-      <circle cx="32" cy="36" r="14" fill={fill} stroke={stroke} strokeWidth="1.5"/>
-      <circle cx="22" cy="24" r="6" fill={fill} stroke={stroke} strokeWidth="1.5"/>
-      <circle cx="42" cy="24" r="6" fill={fill} stroke={stroke} strokeWidth="1.5"/>
-      <circle cx="27" cy="34" r="1.5" fill={stroke}/>
-      <circle cx="37" cy="34" r="1.5" fill={stroke}/>
-      <circle cx="32" cy="40" r="2" fill={accent}/>
+      <ellipse cx="32" cy="56" rx="14" ry="1.8" fill={shadow} opacity="0.2"/>
+      {/* body */}
+      <ellipse cx="32" cy="44" rx="12" ry="10" fill={fill} stroke={stroke} strokeWidth="1.5"/>
+      {/* head */}
+      <circle cx="32" cy="30" r="13" fill={fill} stroke={stroke} strokeWidth="1.5"/>
+      {/* ears */}
+      <circle cx="22" cy="22" r="6" fill={fill} stroke={stroke} strokeWidth="1.4"/>
+      <circle cx="42" cy="22" r="6" fill={fill} stroke={stroke} strokeWidth="1.4"/>
+      <circle cx="22" cy="22" r="3" fill={accent} opacity="0.55"/>
+      <circle cx="42" cy="22" r="3" fill={accent} opacity="0.55"/>
+      {/* face */}
+      <circle cx="27" cy="30" r="2" fill={stroke}/>
+      <circle cx="37" cy="30" r="2" fill={stroke}/>
+      <circle cx="27.5" cy="29" r="0.6" fill="#fff"/>
+      <circle cx="37.5" cy="29" r="0.6" fill="#fff"/>
+      {/* cheeks */}
+      <circle cx="24" cy="34" r="2" fill={COLORS.pink.mid} opacity="0.55"/>
+      <circle cx="40" cy="34" r="2" fill={COLORS.pink.mid} opacity="0.55"/>
+      {/* nose */}
+      <path d="M30 33 Q32 35 34 33 Q33 36 32 36 Q31 36 30 33" fill={accent}/>
+      {/* smile */}
+      <path d="M28 37 Q32 40 36 37" stroke={stroke} strokeWidth="1" fill="none" strokeLinecap="round"/>
+      {/* tummy */}
+      <ellipse cx="32" cy="46" rx="6" ry="5" fill={accent} opacity="0.45"/>
+      {/* tiny feet */}
+      <ellipse cx="26" cy="53" rx="3" ry="1.5" fill={fill} stroke={stroke} strokeWidth="1"/>
+      <ellipse cx="38" cy="53" rx="3" ry="1.5" fill={fill} stroke={stroke} strokeWidth="1"/>
     </>; break;
+
     case "Bed": body = <>
-      <rect x="10" y="30" width="44" height="18" rx="6" fill={fill} stroke={stroke} strokeWidth="1.5"/>
-      <rect x="14" y="20" width="14" height="14" rx="5" fill={accent} stroke={stroke} strokeWidth="1.2"/>
-      <line x1="10" y1="38" x2="54" y2="38" stroke={border} strokeWidth="1"/>
+      <ellipse cx="32" cy="54" rx="24" ry="1.6" fill={shadow} opacity="0.2"/>
+      {/* mattress base */}
+      <rect x="8" y="32" width="48" height="18" rx="4" fill={accent} stroke={stroke} strokeWidth="1.4"/>
+      {/* mattress top */}
+      <rect x="8" y="28" width="48" height="8" rx="3" fill={fill} stroke={stroke} strokeWidth="1.4"/>
+      {/* highlight */}
+      <rect x="10" y="29" width="44" height="2" fill={hi} opacity="0.5"/>
+      {/* pillow */}
+      <rect x="12" y="18" width="18" height="14" rx="5" fill={fill} stroke={stroke} strokeWidth="1.3"/>
+      <ellipse cx="21" cy="22" rx="6" ry="1.5" fill={hi} opacity="0.5"/>
+      {/* blanket */}
+      <path d="M30 28 L56 28 L56 40 Q56 42 54 42 L32 42 Q30 42 30 40 Z" fill={border} stroke={stroke} strokeWidth="1.3" strokeLinejoin="round"/>
+      <path d="M30 28 L34 24 L38 28 L42 24 L46 28 L50 24 L54 28" stroke={accent} strokeWidth="1" fill="none"/>
+      {/* feet */}
+      <rect x="8" y="48" width="3" height="6" rx="1" fill={stroke}/>
+      <rect x="53" y="48" width="3" height="6" rx="1" fill={stroke}/>
+      {/* stars/zzz */}
+      <text x="40" y="14" fontSize="8" fill={accent} fontWeight="bold">z</text>
+      <text x="44" y="10" fontSize="6" fill={accent} fontWeight="bold">z</text>
     </>; break;
+
     case "Mirror": body = <>
-      <ellipse cx="32" cy="32" rx="14" ry="20" fill={fill} stroke={stroke} strokeWidth="1.5"/>
-      <ellipse cx="32" cy="32" rx="10" ry="16" fill={border} opacity="0.5"/>
-      <ellipse cx="28" cy="24" rx="3" ry="5" fill="#fff" opacity="0.6"/>
+      <ellipse cx="32" cy="56" rx="6" ry="1.5" fill={shadow} opacity="0.2"/>
+      {/* frame */}
+      <ellipse cx="32" cy="30" rx="16" ry="22" fill={accent} stroke={stroke} strokeWidth="1.5"/>
+      {/* glass */}
+      <ellipse cx="32" cy="30" rx="12" ry="18" fill={fill} stroke={stroke} strokeWidth="1"/>
+      {/* reflection */}
+      <path d="M22 18 Q22 30 26 44" stroke={hi} strokeWidth="2" fill="none" opacity="0.7"/>
+      <ellipse cx="36" cy="22" rx="2" ry="4" fill="#fff" opacity="0.5"/>
+      {/* decorative frame top */}
+      <path d="M28 8 Q32 4 36 8" stroke={stroke} strokeWidth="1.4" fill="none"/>
+      <circle cx="32" cy="7" r="2" fill={border} stroke={stroke} strokeWidth="1"/>
+      {/* stand */}
+      <path d="M28 52 L36 52 L34 56 L30 56 Z" fill={stroke}/>
+      <ellipse cx="32" cy="56" rx="6" ry="1.5" fill={accent} stroke={stroke} strokeWidth="1"/>
     </>; break;
+
     case "Vase": body = <>
-      <path d="M22 18 L26 18 L24 28 Q18 32 18 42 Q18 52 32 52 Q46 52 46 42 Q46 32 40 28 L38 18 L42 18" fill={fill} stroke={stroke} strokeWidth="1.5" strokeLinejoin="round"/>
-      <circle cx="32" cy="40" r="4" fill={accent}/>
+      <ellipse cx="32" cy="56" rx="14" ry="1.6" fill={shadow} opacity="0.2"/>
+      {/* vase body */}
+      <path d="M24 18 L28 18 L26 26 Q18 30 18 40 Q18 52 32 52 Q46 52 46 40 Q46 30 38 26 L36 18 L40 18" fill={fill} stroke={stroke} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round"/>
+      {/* shading */}
+      <path d="M22 36 Q22 46 28 50" stroke={shadow} strokeWidth="2" opacity="0.25" fill="none"/>
+      <path d="M40 32 Q42 42 38 50" stroke={hi} strokeWidth="1.6" opacity="0.55" fill="none"/>
+      {/* flowers */}
+      <path d="M32 18 L32 6" stroke={COLORS.green.mid} strokeWidth="1.4"/>
+      <circle cx="32" cy="6" r="3.5" fill={COLORS.pink.mid} stroke={stroke} strokeWidth="0.9"/>
+      <circle cx="32" cy="6" r="1.2" fill={COLORS.amber.mid}/>
+      <path d="M26 18 L22 8" stroke={COLORS.green.mid} strokeWidth="1.2"/>
+      <circle cx="22" cy="8" r="2.8" fill={COLORS.coral.mid} stroke={stroke} strokeWidth="0.9"/>
+      <path d="M38 18 L42 8" stroke={COLORS.green.mid} strokeWidth="1.2"/>
+      <circle cx="42" cy="8" r="2.8" fill={accent} stroke={stroke} strokeWidth="0.9"/>
+      {/* leaves */}
+      <path d="M30 12 Q26 12 24 14" stroke={COLORS.green.mid} strokeWidth="1.6" fill={COLORS.green.bg}/>
+      <path d="M34 12 Q38 12 40 14" stroke={COLORS.green.mid} strokeWidth="1.6" fill={COLORS.green.bg}/>
+      {/* water line */}
+      <ellipse cx="32" cy="36" rx="11" ry="1.5" fill={COLORS.sky.mid} opacity="0.3"/>
     </>; break;
+
     case "Stool": body = <>
-      <ellipse cx="32" cy="28" rx="14" ry="4" fill={accent} stroke={stroke} strokeWidth="1.2"/>
-      <rect x="20" y="28" width="24" height="4" rx="2" fill={fill} stroke={stroke} strokeWidth="1"/>
-      <line x1="22" y1="32" x2="20" y2="50" stroke={stroke} strokeWidth="1.5" strokeLinecap="round"/>
-      <line x1="42" y1="32" x2="44" y2="50" stroke={stroke} strokeWidth="1.5" strokeLinecap="round"/>
+      <ellipse cx="32" cy="56" rx="14" ry="1.6" fill={shadow} opacity="0.2"/>
+      {/* cushion top */}
+      <ellipse cx="32" cy="26" rx="16" ry="5" fill={fill} stroke={stroke} strokeWidth="1.5"/>
+      <ellipse cx="32" cy="25" rx="14" ry="3.5" fill={accent} opacity="0.45"/>
+      <ellipse cx="26" cy="23" rx="6" ry="1.5" fill={hi} opacity="0.55"/>
+      {/* side */}
+      <path d="M16 26 Q16 28 18 30 L46 30 Q48 28 48 26" fill={accent} stroke={stroke} strokeWidth="1.3"/>
+      {/* legs */}
+      <path d="M20 30 Q20 42 18 54" stroke={stroke} strokeWidth="2.2" fill="none" strokeLinecap="round"/>
+      <path d="M44 30 Q44 42 46 54" stroke={stroke} strokeWidth="2.2" fill="none" strokeLinecap="round"/>
+      <path d="M28 30 L28 54" stroke={stroke} strokeWidth="2" fill="none" strokeLinecap="round" opacity="0.55"/>
+      <path d="M36 30 L36 54" stroke={stroke} strokeWidth="2" fill="none" strokeLinecap="round" opacity="0.55"/>
+      {/* cross brace */}
+      <line x1="20" y1="44" x2="46" y2="44" stroke={stroke} strokeWidth="1.2" opacity="0.7"/>
     </>; break;
+
     case "Curtain": body = <>
-      <rect x="14" y="14" width="36" height="4" rx="2" fill={stroke}/>
-      <path d="M16 18 Q14 36 18 50 M22 18 Q20 36 24 50 M28 18 Q26 36 30 50 M34 18 Q32 36 36 50 M40 18 Q38 36 42 50 M46 18 Q44 36 48 50" stroke={accent} strokeWidth="2" fill="none"/>
-      <path d="M14 50 L50 50" stroke={stroke} strokeWidth="1"/>
+      {/* rod */}
+      <rect x="10" y="13" width="44" height="3" rx="1.5" fill={stroke}/>
+      <circle cx="10" cy="14.5" r="2.5" fill={accent} stroke={stroke} strokeWidth="1"/>
+      <circle cx="54" cy="14.5" r="2.5" fill={accent} stroke={stroke} strokeWidth="1"/>
+      {/* curtain panels */}
+      <path d="M12 16 Q11 30 13 50 Q14 54 12 54 Q11 54 11 52 Q9 30 11 16 Z" fill={fill} stroke={stroke} strokeWidth="1.3" strokeLinejoin="round"/>
+      <path d="M16 16 Q15 32 17 50 Q18 54 16 54 Q14 54 14 52 Q13 32 15 16 Z" fill={accent} stroke={stroke} strokeWidth="1.3" opacity="0.85"/>
+      <path d="M20 16 Q19 32 21 50 Q22 54 20 54 Q18 54 18 52 Q17 32 19 16 Z" fill={fill} stroke={stroke} strokeWidth="1.3" strokeLinejoin="round"/>
+      <path d="M24 16 Q23 32 25 50 Q26 54 24 54 Q22 54 22 52 Q21 32 23 16 Z" fill={accent} stroke={stroke} strokeWidth="1.3" opacity="0.85"/>
+      {/* gap (tie back) */}
+      <ellipse cx="32" cy="35" rx="3" ry="6" fill={border} opacity="0.3"/>
+      {/* right side mirrored */}
+      <path d="M52 16 Q53 30 51 50 Q50 54 52 54 Q53 54 53 52 Q55 30 53 16 Z" fill={fill} stroke={stroke} strokeWidth="1.3" strokeLinejoin="round"/>
+      <path d="M48 16 Q49 32 47 50 Q46 54 48 54 Q50 54 50 52 Q51 32 49 16 Z" fill={accent} stroke={stroke} strokeWidth="1.3" opacity="0.85"/>
+      <path d="M44 16 Q45 32 43 50 Q42 54 44 54 Q46 54 46 52 Q47 32 45 16 Z" fill={fill} stroke={stroke} strokeWidth="1.3" strokeLinejoin="round"/>
+      <path d="M40 16 Q41 32 39 50 Q38 54 40 54 Q42 54 42 52 Q43 32 41 16 Z" fill={accent} stroke={stroke} strokeWidth="1.3" opacity="0.85"/>
+      {/* tie ropes */}
+      <path d="M16 32 Q20 38 24 32" stroke={stroke} strokeWidth="1" fill="none"/>
+      <path d="M48 32 Q44 38 40 32" stroke={stroke} strokeWidth="1" fill="none"/>
     </>; break;
+
     case "Mushroom": body = <>
-      <path d="M14 32 Q14 18 32 16 Q50 18 50 32 Z" fill={accent} stroke={stroke} strokeWidth="1.5"/>
-      <circle cx="22" cy="26" r="2.5" fill={fill}/>
-      <circle cx="32" cy="22" r="2" fill={fill}/>
-      <circle cx="42" cy="26" r="2.5" fill={fill}/>
-      <rect x="26" y="32" width="12" height="18" rx="4" fill={fill} stroke={stroke} strokeWidth="1.2"/>
+      <ellipse cx="32" cy="56" rx="10" ry="1.6" fill={shadow} opacity="0.22"/>
+      {/* cap */}
+      <path d="M10 34 Q10 16 32 14 Q54 16 54 34 Q54 38 50 38 L14 38 Q10 38 10 34 Z" fill={accent} stroke={stroke} strokeWidth="1.5" strokeLinejoin="round"/>
+      {/* cap shading */}
+      <path d="M12 30 Q14 22 32 18 Q40 18 48 24" stroke={hi} strokeWidth="2.5" opacity="0.55" fill="none"/>
+      <path d="M50 32 Q40 36 30 35" stroke={shadow} strokeWidth="2" opacity="0.25" fill="none"/>
+      {/* spots */}
+      <ellipse cx="20" cy="26" rx="3" ry="2.2" fill={fill} stroke={stroke} strokeWidth="0.9"/>
+      <ellipse cx="32" cy="22" rx="2.5" ry="1.8" fill={fill} stroke={stroke} strokeWidth="0.9"/>
+      <ellipse cx="44" cy="28" rx="3.2" ry="2.4" fill={fill} stroke={stroke} strokeWidth="0.9"/>
+      <ellipse cx="38" cy="34" rx="2" ry="1.4" fill={fill} stroke={stroke} strokeWidth="0.9"/>
+      {/* stem */}
+      <path d="M24 38 Q22 50 26 54 L38 54 Q42 50 40 38 Z" fill={fill} stroke={stroke} strokeWidth="1.4" strokeLinejoin="round"/>
+      <path d="M27 40 Q26 48 28 52" stroke={accent} strokeWidth="1" opacity="0.5" fill="none"/>
+      {/* face */}
+      <circle cx="28" cy="46" r="1.5" fill={stroke}/>
+      <circle cx="36" cy="46" r="1.5" fill={stroke}/>
+      <path d="M30 50 Q32 51 34 50" stroke={stroke} strokeWidth="0.9" fill="none" strokeLinecap="round"/>
+      <circle cx="26" cy="48" r="1" fill={COLORS.pink.mid} opacity="0.6"/>
+      <circle cx="38" cy="48" r="1" fill={COLORS.pink.mid} opacity="0.6"/>
     </>; break;
+
     case "Cake": body = <>
-      <rect x="14" y="30" width="36" height="18" rx="4" fill={fill} stroke={stroke} strokeWidth="1.5"/>
-      <path d="M14 36 Q22 32 32 36 Q42 40 50 36 L50 30 L14 30 Z" fill={accent} stroke={stroke} strokeWidth="1.2"/>
-      <rect x="30" y="18" width="4" height="12" rx="1" fill={border}/>
-      <path d="M32 14 Q30 16 32 18 Q34 16 32 14" fill={COLORS.coral.mid}/>
-      <circle cx="22" cy="34" r="1.5" fill={COLORS.pink.mid}/>
-      <circle cx="42" cy="34" r="1.5" fill={COLORS.pink.mid}/>
+      <ellipse cx="32" cy="54" rx="22" ry="1.8" fill={shadow} opacity="0.2"/>
+      {/* plate */}
+      <ellipse cx="32" cy="50" rx="24" ry="3" fill={border} stroke={stroke} strokeWidth="1.3"/>
+      <ellipse cx="32" cy="49" rx="22" ry="1.6" fill={hi} opacity="0.4"/>
+      {/* lower tier */}
+      <path d="M12 36 L52 36 L50 48 Q50 50 48 50 L16 50 Q14 50 14 48 Z" fill={fill} stroke={stroke} strokeWidth="1.4" strokeLinejoin="round"/>
+      <ellipse cx="32" cy="36" rx="20" ry="3.5" fill={accent} stroke={stroke} strokeWidth="1.2"/>
+      {/* frosting drips */}
+      <path d="M14 36 Q18 42 22 36 Q26 42 30 36 Q34 42 38 36 Q42 42 46 36 Q50 42 52 36" stroke={stroke} strokeWidth="1.2" fill="none"/>
+      <path d="M16 38 Q18 40 16 42 M28 38 Q30 40 28 42 M44 38 Q46 40 44 42" fill={accent}/>
+      {/* upper tier */}
+      <path d="M20 24 L44 24 L42 34 L22 34 Z" fill={fill} stroke={stroke} strokeWidth="1.4" strokeLinejoin="round"/>
+      <ellipse cx="32" cy="24" rx="12" ry="2.5" fill={border} stroke={stroke} strokeWidth="1.2"/>
+      {/* berries */}
+      <circle cx="24" cy="44" r="1.8" fill={COLORS.coral.mid} stroke={stroke} strokeWidth="0.5"/>
+      <circle cx="32" cy="44" r="1.8" fill={COLORS.pink.mid} stroke={stroke} strokeWidth="0.5"/>
+      <circle cx="40" cy="44" r="1.8" fill={COLORS.coral.mid} stroke={stroke} strokeWidth="0.5"/>
+      {/* candle */}
+      <rect x="30.5" y="13" width="3" height="11" rx="1" fill={COLORS.coral.mid} stroke={stroke} strokeWidth="0.6"/>
+      <path d="M32 13 Q29 10 32 6 Q35 10 32 13" fill={COLORS.amber.mid} stroke={stroke} strokeWidth="0.8"/>
+      <ellipse cx="32" cy="9" rx="0.6" ry="1.2" fill="#fff"/>
     </>; break;
+
     case "Sushi": body = <>
-      <ellipse cx="32" cy="36" rx="18" ry="10" fill={fill} stroke={stroke} strokeWidth="1.5"/>
-      <ellipse cx="32" cy="32" rx="14" ry="6" fill={accent} stroke={stroke} strokeWidth="1.2"/>
-      <ellipse cx="32" cy="30" rx="8" ry="3" fill={COLORS.coral.mid}/>
+      <ellipse cx="32" cy="54" rx="22" ry="1.8" fill={shadow} opacity="0.18"/>
+      {/* plate */}
+      <ellipse cx="32" cy="48" rx="24" ry="4" fill={fill} stroke={stroke} strokeWidth="1.3"/>
+      <ellipse cx="32" cy="47" rx="20" ry="2.4" fill={hi} opacity="0.4"/>
+      {/* nori band (back piece) */}
+      <ellipse cx="22" cy="38" rx="9" ry="6" fill={stroke}/>
+      <ellipse cx="22" cy="36" rx="8" ry="4.5" fill={fill} stroke={stroke} strokeWidth="1"/>
+      <ellipse cx="22" cy="34" rx="5" ry="2.5" fill={COLORS.coral.mid}/>
+      {/* salmon flakes */}
+      <path d="M19 33 Q22 35 25 33" stroke={fill} strokeWidth="0.7" fill="none"/>
+      <path d="M19 35 Q22 37 25 35" stroke={fill} strokeWidth="0.7" fill="none"/>
+      {/* front piece */}
+      <ellipse cx="40" cy="42" rx="10" ry="7" fill={stroke}/>
+      <ellipse cx="40" cy="40" rx="9" ry="5" fill={fill} stroke={stroke} strokeWidth="1"/>
+      <ellipse cx="40" cy="38" rx="6" ry="2.5" fill={COLORS.amber.mid}/>
+      {/* tobiko dots */}
+      <circle cx="38" cy="38" r="0.8" fill={COLORS.coral.mid}/>
+      <circle cx="42" cy="38" r="0.8" fill={COLORS.coral.mid}/>
+      <circle cx="40" cy="37" r="0.8" fill={COLORS.coral.mid}/>
+      {/* chopsticks */}
+      <line x1="6" y1="20" x2="20" y2="28" stroke={accent} strokeWidth="1.6" strokeLinecap="round"/>
+      <line x1="8" y1="16" x2="22" y2="26" stroke={accent} strokeWidth="1.6" strokeLinecap="round"/>
+      {/* steam */}
+      <path d="M22 22 Q20 18 22 14 M40 22 Q42 18 40 14" stroke={stroke} strokeWidth="0.9" fill="none" opacity="0.5" strokeLinecap="round"/>
     </>; break;
+
     case "Bread": body = <>
-      <path d="M16 28 Q16 18 32 18 Q48 18 48 28 L48 44 Q48 50 42 50 L22 50 Q16 50 16 44 Z" fill={fill} stroke={stroke} strokeWidth="1.5"/>
-      <path d="M20 26 Q24 22 28 26 M30 26 Q34 22 38 26 M40 26 Q44 22 48 26" stroke={accent} strokeWidth="1.2" fill="none"/>
+      <ellipse cx="32" cy="54" rx="20" ry="1.6" fill={shadow} opacity="0.18"/>
+      {/* loaf body */}
+      <path d="M12 30 Q12 16 32 16 Q52 16 52 30 L52 44 Q52 50 46 50 L18 50 Q12 50 12 44 Z" fill={fill} stroke={stroke} strokeWidth="1.5" strokeLinejoin="round"/>
+      {/* crust shading on top */}
+      <path d="M12 30 Q12 18 32 18 Q52 18 52 30" stroke={accent} strokeWidth="2.2" fill="none"/>
+      {/* slashes on top */}
+      <path d="M18 24 Q20 22 22 24 M28 22 Q30 20 32 22 M38 24 Q40 22 42 24 M48 26 Q50 24 52 26" stroke={stroke} strokeWidth="1.2" fill="none" strokeLinecap="round"/>
+      {/* highlights */}
+      <path d="M18 38 Q18 44 22 48" stroke={hi} strokeWidth="1.3" fill="none" opacity="0.6"/>
+      {/* small holes */}
+      <circle cx="24" cy="38" r="1" fill={accent} opacity="0.5"/>
+      <circle cx="32" cy="40" r="0.9" fill={accent} opacity="0.5"/>
+      <circle cx="40" cy="38" r="1" fill={accent} opacity="0.5"/>
+      {/* base shadow */}
+      <ellipse cx="32" cy="48" rx="18" ry="1.3" fill={shadow} opacity="0.2"/>
+      {/* wheat on top */}
+      <path d="M32 16 L32 8" stroke={COLORS.amber.mid} strokeWidth="1"/>
+      <path d="M32 10 L29 8 M32 12 L29 10 M32 14 L29 12 M32 10 L35 8 M32 12 L35 10 M32 14 L35 12" stroke={COLORS.amber.mid} strokeWidth="0.8"/>
     </>; break;
+
     case "Apple": body = <>
-      <path d="M32 22 Q22 22 20 32 Q18 46 32 50 Q46 46 44 32 Q42 22 32 22" fill={accent} stroke={stroke} strokeWidth="1.5"/>
-      <path d="M32 22 Q32 16 36 14" stroke={COLORS.green.mid} strokeWidth="2" fill="none" strokeLinecap="round"/>
-      <ellipse cx="28" cy="28" rx="3" ry="2" fill="#fff" opacity="0.5"/>
+      <ellipse cx="32" cy="54" rx="14" ry="1.5" fill={shadow} opacity="0.18"/>
+      {/* apple body */}
+      <path d="M32 20 Q22 18 18 28 Q14 42 22 50 Q28 53 32 50 Q36 53 42 50 Q50 42 46 28 Q42 18 32 20 Z" fill={accent} stroke={stroke} strokeWidth="1.5" strokeLinejoin="round"/>
+      {/* darker shading on side */}
+      <path d="M40 24 Q46 32 42 46" stroke={shadow} strokeWidth="2.5" opacity="0.3" fill="none"/>
+      {/* highlight */}
+      <ellipse cx="24" cy="28" rx="3.5" ry="6" fill="#fff" opacity="0.6"/>
+      <ellipse cx="22" cy="26" rx="1.5" ry="3" fill="#fff" opacity="0.9"/>
+      {/* center indent */}
+      <ellipse cx="32" cy="22" rx="4" ry="1.2" fill={shadow} opacity="0.3"/>
+      {/* stem */}
+      <path d="M32 22 Q31 16 33 12" stroke={stroke} strokeWidth="2" fill="none" strokeLinecap="round"/>
+      {/* leaf */}
+      <path d="M33 14 Q38 12 40 16 Q38 18 34 17 Q33 16 33 14" fill={COLORS.green.mid} stroke={stroke} strokeWidth="1" strokeLinejoin="round"/>
+      <path d="M34 15 Q37 15 39 16" stroke={stroke} strokeWidth="0.5" fill="none"/>
     </>; break;
+
     case "Picture": body = <>
-      <rect x="12" y="14" width="40" height="36" rx="4" fill={fill} stroke={stroke} strokeWidth="1.5"/>
-      <circle cx="22" cy="26" r="3" fill={COLORS.amber.mid}/>
-      <path d="M14 44 L22 36 L30 40 L40 30 L50 44 Z" fill={accent}/>
-      <rect x="12" y="14" width="40" height="36" rx="4" fill="none" stroke={border} strokeWidth="2.5"/>
+      <rect x="10" y="50" width="44" height="3" rx="1.5" fill={shadow} opacity="0.18"/>
+      {/* frame outer */}
+      <rect x="10" y="10" width="44" height="40" rx="3" fill={accent} stroke={stroke} strokeWidth="1.5"/>
+      {/* inner mat */}
+      <rect x="14" y="14" width="36" height="32" rx="1.5" fill={fill}/>
+      {/* portrait subject */}
+      <circle cx="32" cy="26" r="6" fill={COLORS.amber.bg} stroke={stroke} strokeWidth="1.2"/>
+      <circle cx="29" cy="25" r="0.8" fill={stroke}/>
+      <circle cx="35" cy="25" r="0.8" fill={stroke}/>
+      <path d="M30 28 Q32 30 34 28" stroke={stroke} strokeWidth="0.8" fill="none"/>
+      <path d="M26 22 Q26 16 32 16 Q38 16 38 22" stroke={stroke} strokeWidth="1.5" fill={c.text} opacity="0.65"/>
+      {/* body */}
+      <path d="M22 44 Q22 36 32 34 Q42 36 42 44 L22 44 Z" fill={accent} stroke={stroke} strokeWidth="1.2"/>
+      {/* corner highlights */}
+      <line x1="10" y1="11" x2="54" y2="11" stroke={hi} strokeWidth="1" opacity="0.5"/>
+      <line x1="11" y1="11" x2="11" y2="50" stroke={hi} strokeWidth="1" opacity="0.4"/>
+      {/* decoration */}
+      <path d="M16 12 L20 14 M48 12 L44 14" stroke={hi} strokeWidth="0.7" opacity="0.5"/>
+      {/* small heart in corner */}
+      <path d="M44 18 Q46 16 47 18 Q48 16 50 18 Q50 21 47 23 Q44 21 44 18" fill={COLORS.coral.mid} opacity="0.7"/>
     </>; break;
+
     case "Teapot": body = <>
-      <path d="M18 30 Q14 30 14 36 Q14 46 22 50 L42 50 Q50 46 50 36 Q50 30 46 30 Z" fill={fill} stroke={stroke} strokeWidth="1.5"/>
-      <path d="M14 36 Q10 36 10 40 Q10 44 14 44" fill="none" stroke={stroke} strokeWidth="1.5"/>
-      <rect x="28" y="24" width="8" height="6" rx="2" fill={accent}/>
-      <circle cx="32" cy="20" r="2.5" fill={border}/>
+      <ellipse cx="32" cy="54" rx="18" ry="1.8" fill={shadow} opacity="0.2"/>
+      {/* body */}
+      <path d="M18 32 Q14 32 14 38 Q14 48 22 52 L42 52 Q50 48 50 38 Q50 32 46 32 Z" fill={fill} stroke={stroke} strokeWidth="1.5" strokeLinejoin="round"/>
+      {/* shading */}
+      <path d="M20 36 Q20 46 24 50" stroke={hi} strokeWidth="1.5" fill="none" opacity="0.6"/>
+      <path d="M44 36 Q46 46 42 50" stroke={shadow} strokeWidth="2" fill="none" opacity="0.25"/>
+      {/* spout */}
+      <path d="M14 38 Q6 38 5 42 Q6 46 10 46" fill={fill} stroke={stroke} strokeWidth="1.5"/>
+      <ellipse cx="6" cy="42" rx="1.5" ry="1" fill={stroke}/>
+      {/* handle */}
+      <path d="M50 36 Q58 38 56 46 Q54 50 50 48" fill="none" stroke={stroke} strokeWidth="2"/>
+      {/* lid */}
+      <ellipse cx="32" cy="32" rx="10" ry="2" fill={accent} stroke={stroke} strokeWidth="1.3"/>
+      <ellipse cx="32" cy="31" rx="8" ry="1.2" fill={hi} opacity="0.45"/>
+      {/* knob */}
+      <circle cx="32" cy="28" r="2.5" fill={border} stroke={stroke} strokeWidth="1"/>
+      <circle cx="32" cy="28" r="1" fill={hi} opacity="0.5"/>
+      {/* pattern on body */}
+      <path d="M24 42 Q26 40 28 42 M30 44 Q32 42 34 44 M36 42 Q38 40 40 42" stroke={accent} strokeWidth="1" fill="none" strokeLinecap="round"/>
+      <circle cx="26" cy="42" r="0.8" fill={accent}/>
+      <circle cx="32" cy="44" r="0.8" fill={accent}/>
+      <circle cx="38" cy="42" r="0.8" fill={accent}/>
+      {/* steam from spout */}
+      <path d="M6 38 Q4 34 6 30 Q8 34 6 38" stroke={stroke} strokeWidth="0.8" fill="none" opacity="0.45"/>
     </>; break;
+
     case "Star Frame": body = <>
-      <path d="M32 14 L36 26 L48 26 L38 34 L42 46 L32 38 L22 46 L26 34 L16 26 L28 26 Z" fill={accent} stroke={stroke} strokeWidth="1.5" strokeLinejoin="round"/>
-      <circle cx="32" cy="32" r="4" fill={fill}/>
+      <ellipse cx="32" cy="54" rx="16" ry="1.8" fill={shadow} opacity="0.18"/>
+      {/* star outer */}
+      <path d="M32 8 L37 24 L54 24 L40 34 L45 50 L32 41 L19 50 L24 34 L10 24 L27 24 Z" fill={accent} stroke={stroke} strokeWidth="1.5" strokeLinejoin="round"/>
+      {/* inner highlight on star */}
+      <path d="M32 14 L35 24 L46 24 L37 30 L40 41 L32 35 L24 41 L27 30 L18 24 L29 24 Z" fill={fill} opacity="0.45"/>
+      {/* center photo */}
+      <circle cx="32" cy="30" r="7" fill={fill} stroke={stroke} strokeWidth="1.3"/>
+      {/* heart inside */}
+      <path d="M32 34 L28 30 Q28 27 30 27 Q31 27 32 28.5 Q33 27 34 27 Q36 27 36 30 Z" fill={COLORS.coral.mid}/>
+      {/* sparkles */}
+      <circle cx="14" cy="14" r="1.3" fill={hi}/>
+      <circle cx="50" cy="14" r="1.3" fill={hi}/>
+      <circle cx="48" cy="44" r="1" fill={hi}/>
+      <circle cx="16" cy="44" r="1" fill={hi}/>
     </>; break;
+
     case "Fruit Bowl": body = <>
-      <ellipse cx="32" cy="40" rx="20" ry="8" fill={fill} stroke={stroke} strokeWidth="1.5"/>
-      <path d="M12 40 Q14 50 32 52 Q50 50 52 40" fill={border} stroke={stroke} strokeWidth="1.5"/>
-      <circle cx="26" cy="34" r="5" fill={COLORS.coral.mid}/>
-      <circle cx="36" cy="32" r="5" fill={COLORS.amber.mid}/>
-      <circle cx="40" cy="38" r="4" fill={COLORS.green.mid}/>
+      <ellipse cx="32" cy="54" rx="22" ry="1.8" fill={shadow} opacity="0.2"/>
+      {/* bowl back rim */}
+      <ellipse cx="32" cy="38" rx="22" ry="5" fill={border} stroke={stroke} strokeWidth="1.4"/>
+      {/* fruits */}
+      <circle cx="22" cy="32" r="5" fill={COLORS.coral.mid} stroke={stroke} strokeWidth="1"/>
+      <path d="M22 27 Q22 24 24 24" stroke={COLORS.green.mid} strokeWidth="1.2" fill="none"/>
+      <circle cx="20" cy="30" r="1.5" fill="#fff" opacity="0.55"/>
+      <circle cx="32" cy="28" r="5.5" fill={COLORS.amber.mid} stroke={stroke} strokeWidth="1"/>
+      <ellipse cx="30" cy="26" rx="1.5" ry="2" fill="#fff" opacity="0.55"/>
+      <path d="M32 23 Q32 20 34 20" stroke={COLORS.green.mid} strokeWidth="1.2" fill="none"/>
+      {/* grapes */}
+      <circle cx="42" cy="30" r="2" fill={COLORS.purple.mid} stroke={stroke} strokeWidth="0.7"/>
+      <circle cx="45" cy="32" r="2" fill={COLORS.purple.mid} stroke={stroke} strokeWidth="0.7"/>
+      <circle cx="40" cy="33" r="2" fill={COLORS.purple.mid} stroke={stroke} strokeWidth="0.7"/>
+      <circle cx="43" cy="35" r="2" fill={COLORS.purple.mid} stroke={stroke} strokeWidth="0.7"/>
+      <circle cx="46" cy="28" r="0.8" fill={hi}/>
+      {/* banana */}
+      <path d="M10 32 Q12 26 22 30" stroke={COLORS.amber.mid} strokeWidth="3" fill={COLORS.amber.bg} strokeLinecap="round"/>
+      {/* bowl front */}
+      <path d="M10 38 Q14 50 32 52 Q50 50 54 38 L10 38 Z" fill={fill} stroke={stroke} strokeWidth="1.5" strokeLinejoin="round"/>
+      {/* bowl highlight */}
+      <path d="M14 40 Q18 48 28 50" stroke={hi} strokeWidth="1.4" fill="none" opacity="0.6"/>
+      {/* bowl pattern */}
+      <path d="M14 44 Q24 42 32 44 Q40 46 50 44" stroke={accent} strokeWidth="0.8" fill="none" opacity="0.7"/>
     </>; break;
+
     case "Tea Set": body = <>
-      <ellipse cx="22" cy="40" rx="10" ry="3" fill={border}/>
-      <path d="M14 36 Q14 30 22 30 Q30 30 30 36 L28 40 L16 40 Z" fill={fill} stroke={stroke} strokeWidth="1.5"/>
-      <path d="M30 34 Q34 34 34 38" stroke={stroke} strokeWidth="1.5" fill="none"/>
-      <ellipse cx="44" cy="42" rx="8" ry="3" fill={border}/>
-      <path d="M38 38 Q38 34 44 34 Q50 34 50 38 L48 42 L40 42 Z" fill={accent} stroke={stroke} strokeWidth="1.5"/>
+      <ellipse cx="32" cy="54" rx="24" ry="1.8" fill={shadow} opacity="0.2"/>
+      {/* tray */}
+      <ellipse cx="32" cy="52" rx="26" ry="3" fill={border} stroke={stroke} strokeWidth="1.3"/>
+      <ellipse cx="32" cy="51" rx="24" ry="1.6" fill={hi} opacity="0.45"/>
+      {/* small teapot */}
+      <path d="M10 38 Q8 38 8 42 Q8 48 12 50 L24 50 Q28 48 28 42 Q28 38 26 38 Z" fill={fill} stroke={stroke} strokeWidth="1.3"/>
+      <path d="M8 42 Q4 42 4 46 M4 46 Q6 46 8 46" stroke={stroke} strokeWidth="1.3" fill="none"/>
+      <path d="M28 40 Q32 40 32 44 Q32 48 28 48" fill="none" stroke={stroke} strokeWidth="1.5"/>
+      <ellipse cx="18" cy="38" rx="6" ry="1.5" fill={accent} stroke={stroke} strokeWidth="1"/>
+      <circle cx="18" cy="34" r="1.6" fill={border} stroke={stroke} strokeWidth="0.8"/>
+      {/* pattern */}
+      <circle cx="14" cy="44" r="1" fill={accent}/>
+      <circle cx="22" cy="44" r="1" fill={accent}/>
+      {/* steam from spout */}
+      <path d="M4 42 Q2 38 4 34 Q6 38 4 42" stroke={stroke} strokeWidth="0.8" fill="none" opacity="0.5"/>
+      {/* teacup */}
+      <ellipse cx="42" cy="46" rx="9" ry="2" fill={border}/>
+      <path d="M34 40 Q34 38 36 38 L48 38 Q50 38 50 40 L48 46 L36 46 Z" fill={accent} stroke={stroke} strokeWidth="1.3" strokeLinejoin="round"/>
+      <ellipse cx="42" cy="40" rx="7" ry="1.4" fill={c.text} opacity="0.6"/>
+      <path d="M50 41 Q54 41 54 43 Q54 45 50 45" fill="none" stroke={stroke} strokeWidth="1.3"/>
+      <path d="M36 42 Q42 41 48 42" stroke={hi} strokeWidth="0.8" opacity="0.5" fill="none"/>
+      {/* sugar cube */}
+      <rect x="56" y="40" width="4" height="4" rx="0.5" fill="#fff" stroke={stroke} strokeWidth="0.7"/>
     </>; break;
-    default: body = <circle cx="32" cy="32" r="14" fill={fill} stroke={stroke}/>;
+
+    default: body = <>
+      <circle cx="32" cy="32" r="18" fill={fill} stroke={stroke} strokeWidth="1.5"/>
+      <circle cx="32" cy="32" r="10" fill={accent} opacity="0.45"/>
+      <ellipse cx="26" cy="26" rx="4" ry="2" fill={hi} opacity="0.6"/>
+    </>;
   }
   return <svg width={size} height={size} viewBox="0 0 64 64" style={{display:"block",overflow:"visible"}}>{body}</svg>;
 }
@@ -1236,6 +1736,53 @@ function Hydration({ xpApi, awards }) {
   const pct=Math.min(100,Math.round(todayMl/settings.goal*100));
   const col=COLORS[settings.theme]||COLORS.teal;
 
+  // Animation state: animPct is the *displayed* fill % (lags real pct, animates to it).
+  // wave is a sloshing oscillator amplitude that decays after each change.
+  const [animPct,setAnimPct] = useState(pct);
+  const [wave,setWave] = useState({amp:0, phase:0, ts:0});
+  const animRef = useRef(null);
+  const prevPctRef = useRef(pct);
+
+  // When real pct changes, kick off an animation toward it.
+  useEffect(()=>{
+    const start = animPct;
+    const end = pct;
+    if(start === end){
+      // still keep the wave gently oscillating? no — keep flat when settled
+      return;
+    }
+    const direction = end > start ? 1 : -1;
+    const startTime = performance.now();
+    const duration = 650;            // total fill duration
+    const sloshAmp = 6 * direction;  // initial slosh height
+    const sloshDecay = 1.8;          // how fast amplitude decays
+    prevPctRef.current = start;
+
+    function frame(now){
+      const elapsed = (now - startTime) / 1000; // s
+      const t = Math.min(1, (now - startTime) / duration);
+      // ease-out for fill
+      const eased = 1 - Math.pow(1 - t, 2.5);
+      const cur = start + (end - start) * eased;
+      // wave amp decays exponentially
+      const ampNow = sloshAmp * Math.exp(-sloshDecay * elapsed);
+      const phase = elapsed * 9;       // wave speed
+      setAnimPct(cur);
+      setWave({ amp: ampNow, phase, ts: elapsed });
+      if(t < 1 || Math.abs(ampNow) > 0.15){
+        animRef.current = requestAnimationFrame(frame);
+      } else {
+        setAnimPct(end);
+        setWave({ amp:0, phase:0, ts:0 });
+        animRef.current = null;
+      }
+    }
+    if(animRef.current) cancelAnimationFrame(animRef.current);
+    animRef.current = requestAnimationFrame(frame);
+    return ()=>{ if(animRef.current) cancelAnimationFrame(animRef.current); };
+  // eslint-disable-next-line
+  },[pct]);
+
   useEffect(()=>{
     const key = `water_goal_${td}`;
     if(todayMl >= settings.goal && !awards.has(key)){ xpApi.addXP(XP_PER_ACTION); awards.add(key); }
@@ -1246,9 +1793,39 @@ function Hydration({ xpApi, awards }) {
   function addWater(){setLog(l=>[...l,{id:Date.now(),ml:settings.portion,date:td}]);}
   function removeWater(){if(!todayE.length)return;const last=todayE[todayE.length-1];setLog(l=>l.filter(e=>e.id!==last.id));}
   const cx=100,cy=100,r=85;
-  const fillH=Math.round(r*2*pct/100);
-  const fillY=(cy+r)-fillH;
-  const textOnWater=pct>=52;
+  // Use animated pct for the fill height
+  const dispPct = animPct;
+  const fillY = (cy + r) - (r*2*dispPct/100);
+  const textOnWater = dispPct >= 52;
+
+  // Build the wavy top of the water using two sin-based control points + the slosh amp.
+  // We make a smooth Bezier wave whose midline is at fillY, with two bumps.
+  // Both bumps depend on wave.amp and wave.phase to give the sloshing.
+  function wavePath(){
+    if(dispPct <= 0) return null;
+    if(dispPct >= 99) {
+      // full — flat top
+      return `M ${cx-r} ${fillY} L ${cx+r} ${fillY} L ${cx+r} ${cy+r+2} L ${cx-r} ${cy+r+2} Z`;
+    }
+    const a = wave.amp;       // amplitude
+    const p = wave.phase;     // phase
+    // Three control points across x, oscillating slightly out of phase
+    const y0 = fillY + Math.sin(p) * a * 0.4;
+    const y1 = fillY - Math.sin(p + 0.9) * a;       // first bump
+    const y2 = fillY + Math.sin(p + 1.8) * a;       // dip
+    const y3 = fillY - Math.sin(p + 2.7) * a * 0.9; // second bump
+    const y4 = fillY + Math.sin(p + 3.6) * a * 0.4;
+    const x0 = cx-r, x4 = cx+r;
+    const x1 = cx - r/2, x2 = cx, x3 = cx + r/2;
+    // Quadratic curves through the points (using control-handles approximated as midpoints)
+    return `M ${x0} ${y0}
+            Q ${(x0+x1)/2} ${y1 - a*0.3} ${x1} ${y1}
+            Q ${(x1+x2)/2} ${y2 - a*0.2} ${x2} ${y2}
+            Q ${(x2+x3)/2} ${y3 + a*0.2} ${x3} ${y3}
+            Q ${(x3+x4)/2} ${y4 + a*0.3} ${x4} ${y4}
+            L ${cx+r} ${cy+r+2} L ${cx-r} ${cy+r+2} Z`;
+  }
+
   return (
     <div style={{display:"flex",flexDirection:"column",gap:16}}>
       <div style={{display:"flex",justifyContent:"flex-end"}}><SettingsButton open={settingsOpen} onToggle={()=>setSettingsOpen(s=>!s)} color={settings.theme}/></div>
@@ -1278,15 +1855,25 @@ function Hydration({ xpApi, awards }) {
       <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:20,padding:"0.5rem 0"}}>
         <div style={{position:"relative",width:200,height:200}}>
           <svg width="200" height="200" viewBox="0 0 200 200">
-            <defs><clipPath id="hydrationClip"><circle cx={cx} cy={cy} r={r}/></clipPath></defs>
+            <defs>
+              <clipPath id="hydrationClip"><circle cx={cx} cy={cy} r={r}/></clipPath>
+              <linearGradient id="waterGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={col.mid} stopOpacity="0.85"/>
+                <stop offset="100%" stopColor={col.mid} stopOpacity="0.55"/>
+              </linearGradient>
+            </defs>
             <circle cx={cx} cy={cy} r={r} fill={col.bg}/>
-            {pct>0&&<path
-              d={pct>=99
-                ?`M ${cx-r} ${fillY} L ${cx+r} ${fillY} L ${cx+r} ${cy+r+2} L ${cx-r} ${cy+r+2} Z`
-                :`M ${cx-r} ${fillY} Q ${cx-r/2} ${fillY-8} ${cx} ${fillY} Q ${cx+r/2} ${fillY+8} ${cx+r} ${fillY} L ${cx+r} ${cy+r+2} L ${cx-r} ${cy+r+2} Z`
-              }
-              fill={col.mid} opacity="0.55" clipPath="url(#hydrationClip)"
-            />}
+            {dispPct>0 && <g clipPath="url(#hydrationClip)">
+              {/* back layer (slightly behind, deeper colour) */}
+              <path d={wavePath()} fill={col.mid} opacity="0.45"/>
+              {/* front layer (lighter, offset for parallax effect) */}
+              <path d={wavePath()} fill="url(#waterGrad)" transform={`translate(0, ${Math.sin(wave.phase+1)*wave.amp*0.15})`}/>
+              {/* sparkle highlights */}
+              {wave.amp > 0.4 && <>
+                <circle cx={cx-r/3} cy={fillY+8} r="2" fill="#fff" opacity={Math.min(0.6, Math.abs(wave.amp)/8)}/>
+                <circle cx={cx+r/3} cy={fillY+18} r="1.5" fill="#fff" opacity={Math.min(0.4, Math.abs(wave.amp)/10)}/>
+              </>}
+            </g>}
             <circle cx={cx} cy={cy} r={r} fill="none" stroke={col.border} strokeWidth="2.5"/>
           </svg>
           <div style={{position:"absolute",top:0,left:0,width:"100%",height:"100%",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",pointerEvents:"none"}}>
@@ -1574,7 +2161,7 @@ function MySpace({ xpApi, onClose }) {
     {key:"furniture", label:`Furniture (${invFurn.length})`, items:invFurn},
     {key:"walls",     label:`Walls (${invWalls.length})`, items:invWalls},
     {key:"floors",    label:`Floors (${invFloors.length})`, items:invFloors},
-    {key:"golden",    label:`??? (${invGold.length})`, items:invGold},
+    {key:"golden",    label:`Golden (${invGold.length})`, items:invGold},
   ];
   const currentTab = tabs.find(t=>t.key===bagTab) || tabs[0];
 
@@ -1586,7 +2173,7 @@ function MySpace({ xpApi, onClose }) {
       </div>
 
       {/* Room — use padding-bottom hack for guaranteed square in any browser */}
-      <div style={{position:"relative",width:"100%",paddingBottom:"100%",borderRadius:20,border:"0.5px solid #d3d1c7",overflow:"hidden",touchAction:"none"}}>
+      <div style={{position:"relative",width:"100%",paddingBottom:"100%",borderRadius:20,border:"1.5px solid #b4b2a9",overflow:"hidden",touchAction:"none",background:"#FBF9F3"}}>
         <div ref={roomRef} style={{position:"absolute",inset:0}}>
           <RoomBackground activeWall={activeWall} activeFloor={activeFloor}/>
           {/* wall/floor divider */}
@@ -1607,7 +2194,7 @@ function MySpace({ xpApi, onClose }) {
               </div>
             </div>
           ))}
-          <button id="bag-icon" onClick={()=>setBagOpen(o=>!o)} style={{position:"absolute",left:12,bottom:12,width:46,height:46,borderRadius:"50%",background:bagOpen?COLORS.amber.bg:"#fff",border:`1.5px solid ${bagOpen?COLORS.amber.border:"#d3d1c7"}`,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 2px 6px rgba(0,0,0,0.1)",zIndex:5,padding:0}}>
+          <button id="bag-icon" onClick={()=>setBagOpen(o=>!o)} style={{position:"absolute",left:12,bottom:12,width:50,height:50,borderRadius:"50%",background:bagOpen?COLORS.amber.bg:"#fff",border:`2px solid ${bagOpen?COLORS.amber.border:"#b4b2a9"}`,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 2px 8px rgba(0,0,0,0.15)",zIndex:5,padding:0}}>
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={COLORS.amber.text} strokeWidth="1.6">
               <path d="M6 8h12l-1 12H7L6 8z"/>
               <path d="M9 8V6a3 3 0 0 1 6 0v2"/>
@@ -1855,7 +2442,34 @@ function App() {
   );
 }
 
-ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+// ============================================================
+// ERROR BOUNDARY — prevents blank page if anything crashes
+// ============================================================
+class ErrorBoundary extends React.Component {
+  constructor(props){ super(props); this.state = { error:null, info:null }; }
+  static getDerivedStateFromError(error){ return { error }; }
+  componentDidCatch(error, info){ this.setState({ info }); console.error("App crashed:", error, info); }
+  reset(){
+    if(window.confirm("Reset all saved data? This will clear your todos, habits, time logs, water log, mood log, level, and room.")){
+      try { localStorage.clear(); } catch(e){}
+      window.location.reload();
+    }
+  }
+  render(){
+    if(this.state.error){
+      return <div style={{maxWidth:560,margin:"2rem auto",padding:"1.5rem",background:"#fff",border:"1px solid #d3d1c7",borderRadius:20,fontFamily:"sans-serif"}}>
+        <h2 style={{fontSize:18,margin:"0 0 12px",color:"#712B13"}}>Something went wrong</h2>
+        <p style={{fontSize:14,color:"#555",margin:"0 0 12px",lineHeight:1.5}}>The app hit an error and couldn't load. This is often caused by saved data from an older version.</p>
+        <p style={{fontSize:12,fontFamily:"monospace",background:"#FAECE7",color:"#712B13",padding:"10px 12px",borderRadius:10,margin:"0 0 14px",wordBreak:"break-word"}}>{String(this.state.error && this.state.error.message)}</p>
+        <button onClick={()=>this.reset()} style={{borderRadius:14,padding:"8px 20px",background:"#D85A30",color:"#fff",border:"none",fontWeight:500,fontSize:14,cursor:"pointer"}}>Reset saved data</button>
+        <p style={{fontSize:11,color:"#888780",marginTop:14}}>If the error keeps happening after reset, please report it.</p>
+      </div>;
+    }
+    return this.props.children;
+  }
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<ErrorBoundary><App/></ErrorBoundary>);
 </script>
 </body>
 </html>
