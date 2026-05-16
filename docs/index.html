@@ -1272,6 +1272,26 @@ function useAwards(){
 }
 
 // ============================================================
+// GLOBAL THEME — single theme controls the whole app
+// ============================================================
+const ThemeCtx = React.createContext({ theme:"classic", setTheme:()=>{} });
+function useTheme(){ return React.useContext(ThemeCtx); }
+function useGlobalTheme(){
+  const [theme, setTheme] = useState(()=>{
+    const t = load("pd_theme", "classic");
+    return (t && COLORS[t]) ? t : "classic";
+  });
+  useEffect(()=>save("pd_theme", theme), [theme]);
+  // Also paint the body background so the chrome around the app reflects the theme
+  useEffect(()=>{
+    const col = COLORS[theme] || COLORS.classic;
+    try { document.body.style.background = col.bg; } catch(e){}
+  }, [theme]);
+  return { theme, setTheme };
+}
+
+
+// ============================================================
 // UI PRIMITIVES
 // ============================================================
 function Badge({ cat }) {
@@ -1298,15 +1318,17 @@ function Pill({ children, onClick, active, color="purple" }) {
 const THEME_LABELS = {
   pink:"Pink", coral:"Coral", amber:"Amber", green:"Green", teal:"Teal", sky:"Sky", purple:"Purple", classic:"Classic"
 };
-function ThemeSettingsCard({ value, onChange, label="Page colour" }){
+function ThemeSettingsCard({ label="App theme" }){
+  const { theme, setTheme } = useTheme();
   return <Card>
     <div style={{display:"flex",flexDirection:"column",gap:10}}>
       <p style={{fontSize:13,fontWeight:600,color:"#A08C8C",margin:0}}>{label}</p>
+      <p style={{fontSize:11,color:"#C7B3B3",margin:0}}>Changes the whole app — every page uses this colour.</p>
       <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
         {Object.keys(COLORS).map(t=>(
-          <button key={t} onClick={()=>onChange(t)} title={THEME_LABELS[t]||t} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4,background:"transparent",border:"none",cursor:"pointer",padding:0}}>
-            <span style={{width:30,height:30,borderRadius:"50%",background:COLORS[t].mid,border:value===t?`3px solid ${COLORS[t].text}`:"3px solid transparent",outline:"none",boxShadow:value===t?`0 0 0 2px ${COLORS[t].bg}`:"none",display:"block"}} />
-            <span style={{fontSize:10,color:value===t?COLORS[t].text:"#A08C8C",fontWeight:value===t?600:500}}>{THEME_LABELS[t]||t}</span>
+          <button key={t} onClick={()=>setTheme(t)} title={THEME_LABELS[t]||t} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4,background:"transparent",border:"none",cursor:"pointer",padding:0}}>
+            <span style={{width:30,height:30,borderRadius:"50%",background:COLORS[t].mid,border:theme===t?`3px solid ${COLORS[t].text}`:"3px solid transparent",outline:"none",boxShadow:theme===t?`0 0 0 2px ${COLORS[t].bg}`:"none",display:"block"}} />
+            <span style={{fontSize:10,color:theme===t?COLORS[t].text:"#A08C8C",fontWeight:theme===t?600:500}}>{THEME_LABELS[t]||t}</span>
           </button>
         ))}
       </div>
@@ -1321,16 +1343,10 @@ function SettingsButton({ open, onToggle, color }){
   </button>;
 }
 
-// Wraps a page's content with a pastel-tinted backdrop drawn from the chosen theme.
+// Wraps a page's content — kept as a transparent pass-through.
+// No box. Page-level theming is global via the body background.
 function ThemedPage({ theme, children }){
-  const col = COLORS[theme] || COLORS.classic;
-  return <div style={{
-    background: col.bg,
-    border: `1.5px solid ${col.border}`,
-    borderRadius: 22,
-    padding: "14px 14px 16px",
-    boxShadow: "0 2px 12px rgba(180, 130, 130, 0.06)"
-  }}>{children}</div>;
+  return <>{children}</>;
 }
 
 // ============================================================
@@ -1413,13 +1429,14 @@ function Todos({ xpApi, awards }) {
   },[todos]);
 
   const overdue=todos.filter(t=>t.due&&t.due<td).length;
-  const col = COLORS[settings.theme];
+  const { theme } = useTheme();
+  const col = COLORS[theme];
 
   return (
-    <ThemedPage theme={settings.theme}>
+    <ThemedPage theme={theme}>
     <div style={{display:"flex",flexDirection:"column",gap:16}}>
-      <div style={{display:"flex",justifyContent:"flex-end"}}><SettingsButton open={settingsOpen} onToggle={()=>setSettingsOpen(s=>!s)} color={settings.theme}/></div>
-      {settingsOpen&&<ThemeSettingsCard value={settings.theme} onChange={v=>setSettings(s=>({...s,theme:v}))} />}
+      <div style={{display:"flex",justifyContent:"flex-end"}}><SettingsButton open={settingsOpen} onToggle={()=>setSettingsOpen(s=>!s)} color={theme}/></div>
+      {settingsOpen&&<ThemeSettingsCard/>}
 
       <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
         <Inp placeholder="What needs to be done?" value={text} onChange={setText} style={{flex:1,minWidth:140}} />
@@ -1430,8 +1447,8 @@ function Todos({ xpApi, awards }) {
       </div>
 
       <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
-        <Pill active={!showArchive} onClick={()=>setShowArchive(false)} color={settings.theme}>Active ({todos.length})</Pill>
-        <Pill active={showArchive} onClick={()=>setShowArchive(true)} color={settings.theme}>Archived ({archive.length})</Pill>
+        <Pill active={!showArchive} onClick={()=>setShowArchive(false)} color={theme}>Active ({todos.length})</Pill>
+        <Pill active={showArchive} onClick={()=>setShowArchive(true)} color={theme}>Archived ({archive.length})</Pill>
         {!showArchive && overdue>0 && <span style={{marginLeft:"auto",fontSize:13,color:COLORS.coral.text,background:COLORS.coral.bg,borderRadius:20,padding:"3px 10px",border:`1px solid ${COLORS.coral.border}`}}>{overdue} overdue</span>}
       </div>
 
@@ -1561,40 +1578,33 @@ function TimeTracker({ xpApi, awards }) {
   const td=today(); const todayE=entries.filter(e=>e.date===td);
   const todayS=todayE.reduce((a,e)=>a+e.secs,0); const totalS=entries.reduce((a,e)=>a+e.secs,0);
   const byCat=CAT_OPTIONS.map(c=>({cat:c,secs:entries.filter(e=>e.cat===c).reduce((a,e)=>a+e.secs,0)})).filter(x=>x.secs>0);
-  const col = COLORS[settings.theme];
+  const { theme } = useTheme();
+  const col = COLORS[theme];
   const remainingSec = running && running.mode==="down" ? Math.max(0, running.totalSec - elapsed) : elapsed;
   const cdPct = running && running.mode==="down" ? Math.min(100, (elapsed/running.totalSec)*100) : 0;
   const nextMilestoneSec = 600 - (totalS % 600);
 
   return (
-    <ThemedPage theme={settings.theme}>
+    <ThemedPage theme={theme}>
     <div style={{display:"flex",flexDirection:"column",gap:16}}>
-      <div style={{display:"flex",justifyContent:"flex-end"}}><SettingsButton open={settingsOpen} onToggle={()=>setSettingsOpen(s=>!s)} color={settings.theme}/></div>
-      {settingsOpen&&<Card>
-        <div style={{display:"flex",flexDirection:"column",gap:14}}>
-          <p style={{fontSize:13,fontWeight:500,color:"#A08C8C",margin:0}}>Timer settings</p>
-          <div style={{display:"flex",gap:8}}>
-            <Pill active={settings.mode==="up"} onClick={()=>setSettings(s=>({...s,mode:"up"}))} color={settings.theme}>Count up</Pill>
-            <Pill active={settings.mode==="down"} onClick={()=>setSettings(s=>({...s,mode:"down"}))} color={settings.theme}>Count down</Pill>
-          </div>
-          {settings.mode==="down"&&<div style={{display:"flex",alignItems:"center",gap:10}}>
-            <span style={{fontSize:14,flex:1}}>Countdown length</span>
-            <input type="number" value={settings.cdMinutes} min={1} max={180} onChange={e=>setSettings(s=>({...s,cdMinutes:Math.max(1,parseInt(e.target.value)||25)}))} style={{width:80}} />
-            <span style={{fontSize:13,color:"#A08C8C"}}>min</span>
-          </div>}
-          <div>
-            <p style={{fontSize:14,marginBottom:8}}>Colour theme</p>
-            <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-              {Object.keys(COLORS).map(t=>(
-                <button key={t} onClick={()=>setSettings(s=>({...s,theme:t}))} title={THEME_LABELS[t]||t} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4,background:"transparent",border:"none",cursor:"pointer",padding:0}}>
-                  <span style={{width:30,height:30,borderRadius:"50%",background:COLORS[t].mid,border:settings.theme===t?`3px solid ${COLORS[t].text}`:"3px solid transparent",outline:"none",boxShadow:settings.theme===t?`0 0 0 2px ${COLORS[t].bg}`:"none",display:"block"}} />
-                  <span style={{fontSize:10,color:settings.theme===t?COLORS[t].text:"#A08C8C",fontWeight:settings.theme===t?600:500}}>{THEME_LABELS[t]||t}</span>
-                </button>
-              ))}
+      <div style={{display:"flex",justifyContent:"flex-end"}}><SettingsButton open={settingsOpen} onToggle={()=>setSettingsOpen(s=>!s)} color={theme}/></div>
+      {settingsOpen&&<>
+        <Card>
+          <div style={{display:"flex",flexDirection:"column",gap:14}}>
+            <p style={{fontSize:13,fontWeight:600,color:"#A08C8C",margin:0}}>Timer settings</p>
+            <div style={{display:"flex",gap:8}}>
+              <Pill active={settings.mode==="up"} onClick={()=>setSettings(s=>({...s,mode:"up"}))} color={theme}>Count up</Pill>
+              <Pill active={settings.mode==="down"} onClick={()=>setSettings(s=>({...s,mode:"down"}))} color={theme}>Count down</Pill>
             </div>
+            {settings.mode==="down"&&<div style={{display:"flex",alignItems:"center",gap:10}}>
+              <span style={{fontSize:14,flex:1}}>Countdown length</span>
+              <input type="number" value={settings.cdMinutes} min={1} max={180} onChange={e=>setSettings(s=>({...s,cdMinutes:Math.max(1,parseInt(e.target.value)||25)}))} style={{width:80}} />
+              <span style={{fontSize:13,color:"#A08C8C"}}>min</span>
+            </div>}
           </div>
-        </div>
-      </Card>}
+        </Card>
+        <ThemeSettingsCard/>
+      </>}
       <Card style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
         <Inp placeholder="Activity name" value={activity} onChange={setActivity} style={{flex:1,minWidth:140}} />
         <Sel value={cat} onChange={setCat} options={CAT_OPTIONS} />
@@ -1720,13 +1730,14 @@ function Habits({ xpApi, awards }) {
 
   const last7=Array.from({length:7},(_,i)=>{ const d=new Date(); d.setDate(d.getDate()-(6-i)); return d.toISOString().slice(0,10); });
   const doneToday=habits.filter(h=>h.completions.includes(td)).length;
-  const col = COLORS[settings.theme];
+  const { theme } = useTheme();
+  const col = COLORS[theme];
 
   return (
-    <ThemedPage theme={settings.theme}>
+    <ThemedPage theme={theme}>
     <div style={{display:"flex",flexDirection:"column",gap:16}}>
-      <div style={{display:"flex",justifyContent:"flex-end"}}><SettingsButton open={settingsOpen} onToggle={()=>setSettingsOpen(s=>!s)} color={settings.theme}/></div>
-      {settingsOpen&&<ThemeSettingsCard value={settings.theme} onChange={v=>setSettings(s=>({...s,theme:v}))} />}
+      <div style={{display:"flex",justifyContent:"flex-end"}}><SettingsButton open={settingsOpen} onToggle={()=>setSettingsOpen(s=>!s)} color={theme}/></div>
+      {settingsOpen&&<ThemeSettingsCard/>}
       <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
         <Inp placeholder="New habit" value={name} onChange={setName} style={{flex:1,minWidth:160}} />
         <Sel value={cat} onChange={setCat} options={CAT_OPTIONS} />
@@ -1780,7 +1791,8 @@ function Hydration({ xpApi, awards }) {
   const truePct = Math.min(999, Math.round(todayMl/settings.goal*100));
   // Visual fill cap: water can rise slightly above 100% for the "bonus" feeling, up to 115%.
   const visualPct = Math.min(115, truePct);
-  const col=COLORS[settings.theme]||COLORS.teal;
+  const { theme } = useTheme();
+  const col=COLORS[theme]||COLORS.teal;
 
   // Animated fill (lags actual visualPct), and wave amplitude that decays after each change.
   const [animPct,setAnimPct] = useState(visualPct);
@@ -1915,35 +1927,27 @@ function Hydration({ xpApi, awards }) {
   }
 
   return (
-    <ThemedPage theme={settings.theme}>
+    <ThemedPage theme={theme}>
     <div style={{display:"flex",flexDirection:"column",gap:16}}>
-      <div style={{display:"flex",justifyContent:"flex-end"}}><SettingsButton open={settingsOpen} onToggle={()=>setSettingsOpen(s=>!s)} color={settings.theme}/></div>
-      {settingsOpen&&<Card>
-        <div style={{display:"flex",flexDirection:"column",gap:14}}>
-          <p style={{fontSize:13,fontWeight:600,color:"#A08C8C",margin:0}}>Hydration settings</p>
-          <div style={{display:"flex",alignItems:"center",gap:10}}>
-            <span style={{fontSize:14,flex:1}}>Portion size</span>
-            <Sel value={String(settings.portion)} onChange={v=>setSettings(s=>({...s,portion:parseInt(v)}))} options={["125","250","500"]} />
-            <span style={{fontSize:13,color:"#A08C8C"}}>ml</span>
-          </div>
-          <div style={{display:"flex",alignItems:"center",gap:10}}>
-            <span style={{fontSize:14,flex:1}}>Daily goal</span>
-            <input type="number" value={settings.goal} min={250} max={10000} step={250} onChange={e=>setSettings(s=>({...s,goal:Math.max(250,parseInt(e.target.value)||2000)}))} style={{width:80}} />
-            <span style={{fontSize:13,color:"#A08C8C"}}>ml</span>
-          </div>
-          <div>
-            <p style={{fontSize:14,marginBottom:8}}>Colour theme</p>
-            <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-              {Object.keys(COLORS).map(t=>(
-                <button key={t} onClick={()=>setSettings(s=>({...s,theme:t}))} title={THEME_LABELS[t]||t} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4,background:"transparent",border:"none",cursor:"pointer",padding:0}}>
-                  <span style={{width:30,height:30,borderRadius:"50%",background:COLORS[t].mid,border:settings.theme===t?`3px solid ${COLORS[t].text}`:"3px solid transparent",outline:"none",boxShadow:settings.theme===t?`0 0 0 2px ${COLORS[t].bg}`:"none",display:"block"}} />
-                  <span style={{fontSize:10,color:settings.theme===t?COLORS[t].text:"#A08C8C",fontWeight:settings.theme===t?600:500}}>{THEME_LABELS[t]||t}</span>
-                </button>
-              ))}
+      <div style={{display:"flex",justifyContent:"flex-end"}}><SettingsButton open={settingsOpen} onToggle={()=>setSettingsOpen(s=>!s)} color={theme}/></div>
+      {settingsOpen&&<>
+        <Card>
+          <div style={{display:"flex",flexDirection:"column",gap:14}}>
+            <p style={{fontSize:13,fontWeight:600,color:"#A08C8C",margin:0}}>Hydration settings</p>
+            <div style={{display:"flex",alignItems:"center",gap:10}}>
+              <span style={{fontSize:14,flex:1}}>Portion size</span>
+              <Sel value={String(settings.portion)} onChange={v=>setSettings(s=>({...s,portion:parseInt(v)}))} options={["125","250","500"]} />
+              <span style={{fontSize:13,color:"#A08C8C"}}>ml</span>
+            </div>
+            <div style={{display:"flex",alignItems:"center",gap:10}}>
+              <span style={{fontSize:14,flex:1}}>Daily goal</span>
+              <input type="number" value={settings.goal} min={250} max={10000} step={250} onChange={e=>setSettings(s=>({...s,goal:Math.max(250,parseInt(e.target.value)||2000)}))} style={{width:80}} />
+              <span style={{fontSize:13,color:"#A08C8C"}}>ml</span>
             </div>
           </div>
-        </div>
-      </Card>}
+        </Card>
+        <ThemeSettingsCard/>
+      </>}
       <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:20,padding:"0.5rem 0"}}>
         <div style={{position:"relative",width:220,height:220}}>
           <svg width="220" height="220" viewBox="0 0 200 200">
@@ -2053,7 +2057,8 @@ function MoodLogger() {
   const td = today();
   const todays = entries[td];
   function pick(key){ setEntries(e=>({...e, [td]:key})); }
-  const col = COLORS[settings.theme];
+  const { theme } = useTheme();
+  const col = COLORS[theme];
 
   const firstDay = new Date(viewMonth.y, viewMonth.m, 1);
   const daysInMonth = new Date(viewMonth.y, viewMonth.m+1, 0).getDate();
@@ -2072,10 +2077,10 @@ function MoodLogger() {
   const totalLogged = Object.keys(entries).length;
 
   return (
-    <ThemedPage theme={settings.theme}>
+    <ThemedPage theme={theme}>
     <div style={{display:"flex",flexDirection:"column",gap:16}}>
-      <div style={{display:"flex",justifyContent:"flex-end"}}><SettingsButton open={settingsOpen} onToggle={()=>setSettingsOpen(s=>!s)} color={settings.theme}/></div>
-      {settingsOpen&&<ThemeSettingsCard value={settings.theme} onChange={v=>setSettings(s=>({...s,theme:v}))} />}
+      <div style={{display:"flex",justifyContent:"flex-end"}}><SettingsButton open={settingsOpen} onToggle={()=>setSettingsOpen(s=>!s)} color={theme}/></div>
+      {settingsOpen&&<ThemeSettingsCard/>}
       <Card>
         <p style={{fontSize:13,fontWeight:500,color:"#A08C8C",margin:"0 0 14px",textAlign:"center"}}>How are you feeling today?</p>
         <div style={{display:"flex",justifyContent:"space-between",gap:8,alignItems:"flex-end"}}>
@@ -2499,50 +2504,55 @@ function App() {
   const [tab,setTab]=useState("todos");
   const xpApi = useXP();
   const awards = useAwards();
+  const themeApi = useGlobalTheme();
+  const col = COLORS[themeApi.theme] || COLORS.classic;
 
   if(tab==="space"){
-    return <div style={{maxWidth:660,margin:"0 auto",padding:"1.5rem 1rem"}}>
+    return <ThemeCtx.Provider value={themeApi}>
+    <div style={{maxWidth:660,margin:"0 auto",padding:"1.5rem 1rem"}}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"1rem"}}>
-        <h2 style={{fontSize:22,fontWeight:700,margin:0,color:"#665555",letterSpacing:"-0.5px"}}>My space</h2>
-        <button onClick={()=>setTab("todos")} style={{display:"flex",alignItems:"center",gap:8,background:"#FFFBF7",border:"1.5px solid #F3D9D6",borderRadius:30,padding:"5px 14px 5px 6px",cursor:"pointer",boxShadow:"0 2px 8px rgba(180, 130, 130, 0.1)"}}>
-          <span style={{width:34,height:34,borderRadius:"50%",background:COLORS.pink.bg,display:"flex",alignItems:"center",justifyContent:"center",border:`1.5px solid ${COLORS.pink.border}`}}>
-            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke={COLORS.pink.text} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 11l9-7 9 7v9a2 2 0 0 1-2 2h-4v-7h-6v7H5a2 2 0 0 1-2-2v-9z"/></svg>
+        <h2 style={{fontSize:22,fontWeight:700,margin:0,color:col.text,letterSpacing:"-0.5px"}}>My space</h2>
+        <button onClick={()=>setTab("todos")} style={{display:"flex",alignItems:"center",gap:8,background:"#fff",border:`1.5px solid ${col.border}`,borderRadius:30,padding:"5px 14px 5px 6px",cursor:"pointer",boxShadow:"0 2px 8px rgba(0,0,0,0.06)"}}>
+          <span style={{width:34,height:34,borderRadius:"50%",background:col.bg,display:"flex",alignItems:"center",justifyContent:"center",border:`1.5px solid ${col.border}`}}>
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke={col.text} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 11l9-7 9 7v9a2 2 0 0 1-2 2h-4v-7h-6v7H5a2 2 0 0 1-2-2v-9z"/></svg>
           </span>
-          <span style={{fontSize:14,color:"#665555",fontWeight:600}}>Home</span>
+          <span style={{fontSize:14,color:col.text,fontWeight:600}}>Home</span>
         </button>
       </div>
       <MySpace xpApi={xpApi} onClose={()=>setTab("todos")}/>
       <HelpButton/>
       <LevelUpOverlay flash={xpApi.flash} onClose={()=>xpApi.setFlash(null)}/>
-    </div>;
+    </div>
+    </ThemeCtx.Provider>;
   }
 
   return (
+    <ThemeCtx.Provider value={themeApi}>
     <div style={{maxWidth:660,margin:"0 auto",padding:"1.5rem 1rem",position:"relative"}}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"1rem"}}>
-        <h2 style={{fontSize:22,fontWeight:700,margin:0,color:"#665555",letterSpacing:"-0.5px"}}>My dashboard</h2>
+        <h2 style={{fontSize:22,fontWeight:700,margin:0,color:col.text,letterSpacing:"-0.5px"}}>My dashboard</h2>
         {/* Home / My space access — only entry point */}
         <button onClick={()=>setTab("space")} className={xpApi.flash?"lvflash":""}
-          style={{display:"flex",alignItems:"center",gap:8,background:"#FFFBF7",border:"1.5px solid #F3D9D6",borderRadius:30,padding:"5px 14px 5px 6px",cursor:"pointer",position:"relative",boxShadow:"0 2px 8px rgba(180, 130, 130, 0.1)"}}>
-          <span style={{width:34,height:34,borderRadius:"50%",background:COLORS.pink.bg,display:"flex",alignItems:"center",justifyContent:"center",border:`1.5px solid ${COLORS.pink.border}`}}>
-            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke={COLORS.pink.text} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 11l9-7 9 7v9a2 2 0 0 1-2 2h-4v-7h-6v7H5a2 2 0 0 1-2-2v-9z"/></svg>
+          style={{display:"flex",alignItems:"center",gap:8,background:"#fff",border:`1.5px solid ${col.border}`,borderRadius:30,padding:"5px 14px 5px 6px",cursor:"pointer",position:"relative",boxShadow:"0 2px 8px rgba(0,0,0,0.06)"}}>
+          <span style={{width:34,height:34,borderRadius:"50%",background:col.bg,display:"flex",alignItems:"center",justifyContent:"center",border:`1.5px solid ${col.border}`}}>
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke={col.text} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 11l9-7 9 7v9a2 2 0 0 1-2 2h-4v-7h-6v7H5a2 2 0 0 1-2-2v-9z"/></svg>
           </span>
-          <span style={{fontSize:14,color:"#665555",fontWeight:600}}>Home</span>
+          <span style={{fontSize:14,color:col.text,fontWeight:600}}>Home</span>
           {xpApi.flash && <span style={{position:"absolute",top:-8,right:-8,background:COLORS.amber.mid,color:"#fff",fontSize:9,borderRadius:20,padding:"2px 6px",fontWeight:600,whiteSpace:"nowrap"}}>Lv {xpApi.flash.level}!</span>}
         </button>
       </div>
 
-      {/* XP bar */}
-      <div style={{marginBottom:"1.1rem",display:"flex",alignItems:"center",gap:10,background:"#FFFBF7",border:"1.5px solid #F3E2D9",borderRadius:30,padding:"6px 14px"}}>
-        <span style={{fontSize:11,color:COLORS.pink.text,fontWeight:600,minWidth:42}}>Lv {xpApi.xp.level}</span>
-        <div className="bar-bg" style={{flex:1,height:8,borderRadius:20,background:"#FBDDD7",overflow:"hidden"}}>
-          <div style={{height:"100%",width:`${(xpApi.xp.xp/XP_PER_LEVEL)*100}%`,background:`linear-gradient(90deg, ${COLORS.pink.mid}, ${COLORS.purple.mid})`,borderRadius:20,transition:"width 0.4s"}}/>
+      {/* XP bar — themed */}
+      <div style={{marginBottom:"1.1rem",display:"flex",alignItems:"center",gap:10,background:"#fff",border:`1.5px solid ${col.border}`,borderRadius:30,padding:"6px 14px"}}>
+        <span style={{fontSize:11,color:col.text,fontWeight:600,minWidth:42}}>Lv {xpApi.xp.level}</span>
+        <div className="bar-bg" style={{flex:1,height:8,borderRadius:20,background:col.bg,overflow:"hidden",border:`1px solid ${col.border}`}}>
+          <div style={{height:"100%",width:`${(xpApi.xp.xp/XP_PER_LEVEL)*100}%`,background:col.mid,borderRadius:20,transition:"width 0.4s"}}/>
         </div>
-        <span style={{fontSize:11,color:"#A08C8C",minWidth:48,textAlign:"right",fontWeight:500}}>{xpApi.xp.xp}/{XP_PER_LEVEL}</span>
+        <span style={{fontSize:11,color:col.text,minWidth:48,textAlign:"right",fontWeight:500,opacity:0.7}}>{xpApi.xp.xp}/{XP_PER_LEVEL}</span>
       </div>
 
-      {/* Shrinkable tab bar — pastel pill row */}
-      <div className="tab-bar" style={{background:"#FCEAE7",borderRadius:40,padding:"5px 6px",marginBottom:"1.25rem",border:"1.5px solid #F3D9D6"}}>
+      {/* Tab bar — themed pill row */}
+      <div className="tab-bar" style={{background:col.bg,borderRadius:40,padding:"5px 6px",marginBottom:"1.25rem",border:`1.5px solid ${col.border}`}}>
         <div className="tab-bar-inner">
           {[
             ["todos","To-do"],
@@ -2554,10 +2564,11 @@ function App() {
             const active = tab===k;
             return <button key={k} className="tab-btn" onClick={()=>setTab(k)} style={{
               border: "none",
-              background: active?"#FFFBF7":"transparent",
-              color: active?"#665555":"#A08C8C",
+              background: active?"#fff":"transparent",
+              color: active?col.text:col.text,
+              opacity: active?1:0.55,
               fontWeight: active?600:500,
-              boxShadow: active?"0 2px 6px rgba(180,130,130,0.12)":"none",
+              boxShadow: active?"0 2px 6px rgba(0,0,0,0.06)":"none",
             }}>{label}</button>;
           })}
         </div>
@@ -2574,6 +2585,7 @@ function App() {
 
       <LevelUpOverlay flash={xpApi.flash} onClose={()=>xpApi.setFlash(null)}/>
     </div>
+    </ThemeCtx.Provider>
   );
 }
 
