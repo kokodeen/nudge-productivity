@@ -7,25 +7,31 @@
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f5f4f0; color: #1a1a18; min-height: 100vh; }
+  body {
+    font-family: "Nunito", "Quicksand", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: linear-gradient(180deg, #FFF1F2 0%, #FFF7EC 60%, #F4F9F7 100%);
+    background-attachment: fixed;
+    color: #4A3D3D;
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
   input, select, button { font-family: inherit; }
   input[type=text], input[type=date], input[type=number], select {
-    border-radius: 14px; border: 0.5px solid #d3d1c7; padding: 8px 14px;
-    font-size: 14px; background: #f1efe8; color: #1a1a18; outline: none;
+    border-radius: 16px; border: 1.5px solid #F3D9D6; padding: 9px 14px;
+    font-size: 14px; background: #FFFBF7; color: #4A3D3D; outline: none;
+    transition: border-color 0.15s;
   }
-  input[type=text]:focus, input[type=date]:focus, input[type=number]:focus, select:focus { border-color: #888780; }
-  input[type=checkbox] { accent-color: #7f77dd; }
+  input[type=text]:focus, input[type=date]:focus, input[type=number]:focus, select:focus { border-color: #E89AA0; }
+  input[type=checkbox] { accent-color: #E89AA0; transform: scale(1.1); }
   input[type=number] { -moz-appearance: textfield; }
   input[type=number]::-webkit-outer-spin-button, input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
   @media (prefers-color-scheme: dark) {
-    body { background: #1c1c1a; color: #f0ede8; }
-    input[type=text], input[type=date], input[type=number], select { background: #2c2c2a; border-color: #444441; color: #f0ede8; }
-    .card { background: #2c2c2a !important; border-color: #444441 !important; }
-    .tab-bar { background: #2c2c2a !important; }
-    .metric { background: #2c2c2a !important; }
-    .bar-bg { background: #444441 !important; }
+    /* keep light pastel feel even in dark mode preference */
   }
   .furn-item { user-select: none; -webkit-user-select: none; touch-action: none; }
   .lvflash { animation: lvflashAnim 1.2s ease-out; }
@@ -34,11 +40,21 @@
   @keyframes goldShine { 0%,100%{filter:drop-shadow(0 0 3px gold);} 50%{filter:drop-shadow(0 0 10px gold);} }
   @keyframes fadeUp { 0%{opacity:0;transform:translateY(20px);} 100%{opacity:1;transform:translateY(0);} }
   @keyframes celebPop { 0%{opacity:0;transform:scale(0.5);} 60%{transform:scale(1.1);} 100%{opacity:1;transform:scale(1);} }
-  /* Shrinkable tab bar — labels truncate, never wrap */
+  @keyframes goalRing { 0%{stroke-dashoffset:20;} 100%{stroke-dashoffset:0;} }
+
+  /* Shrinkable tab bar — pastel pill row */
   .tab-bar-inner { display:flex; gap:4px; min-width:0; }
-  .tab-btn { flex:1 1 0; min-width:0; padding:8px 6px; border-radius:40px; font-size:13px; cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  @media (max-width: 480px) { .tab-btn { font-size:11px; padding:7px 4px; } }
-  @media (max-width: 380px) { .tab-btn { font-size:10px; padding:6px 3px; } }
+  .tab-btn { flex:1 1 0; min-width:0; padding:9px 6px; border-radius:40px; font-size:13px; cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; transition: background 0.15s, transform 0.1s; }
+  .tab-btn:active { transform: scale(0.96); }
+  @media (max-width: 480px) { .tab-btn { font-size:11px; padding:8px 4px; } }
+  @media (max-width: 380px) { .tab-btn { font-size:10px; padding:7px 3px; } }
+
+  /* Card pastel base */
+  .card { box-shadow: 0 2px 12px rgba(180, 130, 130, 0.08); }
+
+  /* Floating ? button hover */
+  .help-fab:hover { transform: translateY(-2px); }
+  .help-fab { transition: transform 0.15s; }
 </style>
 </head>
 <body>
@@ -47,13 +63,13 @@
 const { useState, useEffect, useRef, useMemo } = React;
 
 const COLORS = {
-  purple: { bg: "#EEEDFE", border: "#AFA9EC", text: "#3C3489", mid: "#7F77DD" },
-  teal:   { bg: "#E1F5EE", border: "#5DCAA5", text: "#085041", mid: "#1D9E75" },
-  coral:  { bg: "#FAECE7", border: "#F0997B", text: "#712B13", mid: "#D85A30" },
-  amber:  { bg: "#FAEEDA", border: "#EF9F27", text: "#633806", mid: "#BA7517" },
-  green:  { bg: "#EAF3DE", border: "#97C459", text: "#27500A", mid: "#639922" },
-  pink:   { bg: "#FBE7EE", border: "#F09BBC", text: "#7A1F44", mid: "#D54B82" },
-  sky:    { bg: "#E2EFFB", border: "#8AB8E8", text: "#0E3A66", mid: "#3C82C7" },
+  purple: { bg: "#F3EEFE", border: "#C7BEEF", text: "#5A4BA0", mid: "#9C8FE8" },
+  teal:   { bg: "#E4F5EE", border: "#9CD6BA", text: "#266454", mid: "#5DBD8E" },
+  coral:  { bg: "#FCE5DC", border: "#F4B097", text: "#8B3A1F", mid: "#EB8364" },
+  amber:  { bg: "#FBE9D2", border: "#F2C282", text: "#7A4716", mid: "#E8A24A" },
+  green:  { bg: "#EEF6DE", border: "#B6D788", text: "#3C641A", mid: "#85B348" },
+  pink:   { bg: "#FCE3EB", border: "#F1A8C0", text: "#8C3859", mid: "#E68AAB" },
+  sky:    { bg: "#E4EFFA", border: "#A6C7E8", text: "#1F4974", mid: "#6FA5D4" },
 };
 const CAT_OPTIONS = ["Work","Personal","Health","Learning","Other"];
 const CAT_COLOR = { Work:"purple", Personal:"teal", Health:"coral", Learning:"amber", Other:"green" };
@@ -905,7 +921,7 @@ const TEX_WALL_THEMES = [
   {name:"Hedgehogs",base:"#FAEEDA", accent:"#633806", motif:"hedge"},
   {name:"Whales",   base:"#E2EFFB", accent:"#3C82C7", motif:"whale"},
   {name:"Frogs",    base:"#EAF3DE", accent:"#27500A", motif:"frog"},
-  {name:"Sheep",    base:"#F7F4EE", accent:"#888780", motif:"sheep"},
+  {name:"Sheep",    base:"#F7F4EE", accent:"#A08C8C", motif:"sheep"},
   // nature
   {name:"Leaves",   base:"#E1F5EE", accent:"#1D9E75", motif:"leaf"},
   {name:"Flowers",  base:"#FBE7EE", accent:"#D54B82", motif:"flower"},
@@ -1267,7 +1283,7 @@ function UrgencyBadge({ u }) {
   return <span style={{ background:c.bg, color:c.text, border:`1px solid ${c.border}`, borderRadius:20, padding:"2px 10px", fontSize:11, fontWeight:500 }}>{u}</span>;
 }
 function Card({ children, style={} }) {
-  return <div className="card" style={{ background:"#fff", border:"0.5px solid #d3d1c7", borderRadius:20, padding:"1rem 1.25rem", ...style }}>{children}</div>;
+  return <div className="card" style={{ background:"#FFFBF7", border:"1.5px solid #F3E2D9", borderRadius:24, padding:"1.1rem 1.25rem", ...style }}>{children}</div>;
 }
 function Inp({ placeholder, value, onChange, style={} }) {
   return <input type="text" placeholder={placeholder} value={value} onChange={e=>onChange(e.target.value)} style={style} />;
@@ -1277,12 +1293,12 @@ function Sel({ value, onChange, options, style={} }) {
 }
 function Pill({ children, onClick, active, color="purple" }) {
   const c = COLORS[color];
-  return <button onClick={onClick} style={{ borderRadius:40, padding:"4px 14px", fontSize:13, cursor:"pointer", fontWeight: active?500:400, background: active?c.bg:"transparent", color: active?c.text:"#888780", border: active?`1px solid ${c.border}`:"1px solid #d3d1c7" }}>{children}</button>;
+  return <button onClick={onClick} style={{ borderRadius:40, padding:"6px 16px", fontSize:13, cursor:"pointer", fontWeight: active?600:500, background: active?c.mid:"#FFFBF7", color: active?"#fff":"#A08C8C", border: active?`1.5px solid ${c.mid}`:"1.5px solid #F3D9D6", transition:"all 0.15s" }}>{children}</button>;
 }
 function ThemeSettingsCard({ value, onChange, label="Page colour" }){
   return <Card>
     <div style={{display:"flex",flexDirection:"column",gap:10}}>
-      <p style={{fontSize:13,fontWeight:500,color:"#888780",margin:0}}>{label}</p>
+      <p style={{fontSize:13,fontWeight:500,color:"#A08C8C",margin:0}}>{label}</p>
       <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
         {Object.keys(COLORS).map(t=>(
           <button key={t} onClick={()=>onChange(t)} style={{width:30,height:30,borderRadius:"50%",background:COLORS[t].mid,border:value===t?`3px solid ${COLORS[t].text}`:"3px solid transparent",cursor:"pointer",outline:"none",padding:0,boxShadow:value===t?`0 0 0 2px ${COLORS[t].bg}`:"none"}} />
@@ -1293,7 +1309,7 @@ function ThemeSettingsCard({ value, onChange, label="Page colour" }){
 }
 function SettingsButton({ open, onToggle, color }){
   const col = COLORS[color] || COLORS.purple;
-  return <button onClick={onToggle} style={{background:open?col.bg:"transparent",border:`1px solid ${open?col.border:"#d3d1c7"}`,borderRadius:20,padding:"4px 14px",fontSize:12,color:open?col.text:"#888780",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:5}}>
+  return <button onClick={onToggle} style={{background:open?col.bg:"transparent",border:`1px solid ${open?col.border:"#F3D9D6"}`,borderRadius:20,padding:"4px 14px",fontSize:12,color:open?col.text:"#A08C8C",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:5}}>
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
     Settings
   </button>;
@@ -1401,32 +1417,32 @@ function Todos({ xpApi, awards }) {
       </div>
 
       <div style={{display:"flex",flexDirection:"column",gap:8}}>
-        {!showArchive && sorted.length===0 && <p style={{color:"#888780",fontSize:14,textAlign:"center",padding:"1.5rem 0"}}>Nothing here yet</p>}
+        {!showArchive && sorted.length===0 && <p style={{color:"#A08C8C",fontSize:14,textAlign:"center",padding:"1.5rem 0"}}>Nothing here yet</p>}
         {!showArchive && sorted.map(t=>{
           const ov=t.due && t.due<td;
           return <Card key={t.id} style={{display:"flex",alignItems:"center",gap:10,padding:"12px 16px",flexWrap:"wrap"}}>
             <input type="checkbox" checked={false} onChange={()=>toggle(t.id)} style={{width:18,height:18,flexShrink:0,cursor:"pointer",accentColor:col.mid}} />
             <div style={{flex:1,minWidth:120}}>
               <span style={{fontSize:15}}>{t.text}</span>
-              {t.due&&<span style={{marginLeft:8,fontSize:12,color:ov?COLORS.coral.text:"#888780"}}>{t.due}</span>}
+              {t.due&&<span style={{marginLeft:8,fontSize:12,color:ov?COLORS.coral.text:"#A08C8C"}}>{t.due}</span>}
             </div>
             <UrgencyBadge u={t.urgency||"Medium"} />
             <Badge cat={t.cat} />
-            <button onClick={()=>removeActive(t.id)} style={{background:"none",border:"none",cursor:"pointer",color:"#888780",fontSize:18,lineHeight:1,padding:"2px 4px",borderRadius:8}}>×</button>
+            <button onClick={()=>removeActive(t.id)} style={{background:"none",border:"none",cursor:"pointer",color:"#A08C8C",fontSize:18,lineHeight:1,padding:"2px 4px",borderRadius:8}}>×</button>
           </Card>;
         })}
 
-        {showArchive && archive.length===0 && <p style={{color:"#888780",fontSize:14,textAlign:"center",padding:"1.5rem 0"}}>No archived tasks yet</p>}
+        {showArchive && archive.length===0 && <p style={{color:"#A08C8C",fontSize:14,textAlign:"center",padding:"1.5rem 0"}}>No archived tasks yet</p>}
         {showArchive && archive.map(t=>(
           <Card key={t.id} style={{display:"flex",alignItems:"center",gap:10,padding:"12px 16px",opacity:0.75,flexWrap:"wrap"}}>
             <input type="checkbox" checked={true} onChange={()=>unarchive(t.id)} style={{width:18,height:18,flexShrink:0,cursor:"pointer",accentColor:col.mid}} title="Un-archive (refunds XP)"/>
             <div style={{flex:1,minWidth:120}}>
               <span style={{fontSize:15,textDecoration:"line-through"}}>{t.text}</span>
-              {t.due&&<span style={{marginLeft:8,fontSize:12,color:"#888780"}}>{t.due}</span>}
+              {t.due&&<span style={{marginLeft:8,fontSize:12,color:"#A08C8C"}}>{t.due}</span>}
             </div>
             <UrgencyBadge u={t.urgency||"Medium"} />
             <Badge cat={t.cat} />
-            <button onClick={()=>crossOffArchived(t.id)} title="Cross off (no XP penalty)" style={{background:"none",border:"none",cursor:"pointer",color:"#888780",fontSize:18,lineHeight:1,padding:"2px 4px",borderRadius:8}}>×</button>
+            <button onClick={()=>crossOffArchived(t.id)} title="Cross off (no XP penalty)" style={{background:"none",border:"none",cursor:"pointer",color:"#A08C8C",fontSize:18,lineHeight:1,padding:"2px 4px",borderRadius:8}}>×</button>
           </Card>
         ))}
       </div>
@@ -1437,9 +1453,9 @@ function Todos({ xpApi, awards }) {
           {v:archive.length,l:"completed"},
           {v:(todos.length+archive.length)?Math.round(archive.length/(todos.length+archive.length)*100)+"%":"0%",l:"done"}
         ].map(({v,l})=>
-          <div key={l} className="metric" style={{flex:1,textAlign:"center",background:"#f1efe8",borderRadius:16,padding:"12px 8px"}}>
+          <div key={l} className="metric" style={{flex:1,textAlign:"center",background:"#FFF7EF",borderRadius:16,padding:"12px 8px"}}>
             <p style={{fontSize:22,fontWeight:500,margin:0}}>{v}</p>
-            <p style={{fontSize:12,color:"#888780",margin:0}}>{l}</p>
+            <p style={{fontSize:12,color:"#A08C8C",margin:0}}>{l}</p>
           </div>)}
       </div>
     </div>
@@ -1535,7 +1551,7 @@ function TimeTracker({ xpApi, awards }) {
       <div style={{display:"flex",justifyContent:"flex-end"}}><SettingsButton open={settingsOpen} onToggle={()=>setSettingsOpen(s=>!s)} color={settings.theme}/></div>
       {settingsOpen&&<Card>
         <div style={{display:"flex",flexDirection:"column",gap:14}}>
-          <p style={{fontSize:13,fontWeight:500,color:"#888780",margin:0}}>Timer settings</p>
+          <p style={{fontSize:13,fontWeight:500,color:"#A08C8C",margin:0}}>Timer settings</p>
           <div style={{display:"flex",gap:8}}>
             <Pill active={settings.mode==="up"} onClick={()=>setSettings(s=>({...s,mode:"up"}))} color={settings.theme}>Count up</Pill>
             <Pill active={settings.mode==="down"} onClick={()=>setSettings(s=>({...s,mode:"down"}))} color={settings.theme}>Count down</Pill>
@@ -1543,7 +1559,7 @@ function TimeTracker({ xpApi, awards }) {
           {settings.mode==="down"&&<div style={{display:"flex",alignItems:"center",gap:10}}>
             <span style={{fontSize:14,flex:1}}>Countdown length</span>
             <input type="number" value={settings.cdMinutes} min={1} max={180} onChange={e=>setSettings(s=>({...s,cdMinutes:Math.max(1,parseInt(e.target.value)||25)}))} style={{width:80}} />
-            <span style={{fontSize:13,color:"#888780"}}>min</span>
+            <span style={{fontSize:13,color:"#A08C8C"}}>min</span>
           </div>}
           <div>
             <p style={{fontSize:14,marginBottom:8}}>Colour theme</p>
@@ -1563,35 +1579,35 @@ function TimeTracker({ xpApi, awards }) {
       {running&&<Card style={{textAlign:"center",background:col.bg,border:`1px solid ${col.border}`}}>
         <p style={{fontSize:13,color:col.text,margin:"0 0 4px"}}>{running.mode==="down"?"Counting down":"Tracking"}: {running.activity}</p>
         <p style={{fontSize:36,fontWeight:500,margin:"4px 0",color:col.text,fontVariantNumeric:"tabular-nums"}}>{running.mode==="down"?fmtClock(remainingSec):fmt(elapsed)}</p>
-        {running.mode==="down"&&<div className="bar-bg" style={{height:6,borderRadius:20,background:"#e8e6e0",overflow:"hidden",marginTop:8}}><div style={{height:"100%",width:`${cdPct}%`,background:col.mid,borderRadius:20,transition:"width 0.25s"}}/></div>}
+        {running.mode==="down"&&<div className="bar-bg" style={{height:6,borderRadius:20,background:"#FBDDD7",overflow:"hidden",marginTop:8}}><div style={{height:"100%",width:`${cdPct}%`,background:col.mid,borderRadius:20,transition:"width 0.25s"}}/></div>}
       </Card>}
       <div style={{display:"flex",gap:12}}>
         {[{v:fmt(todayS),l:"today"},{v:fmt(totalS),l:"total"},{v:todayE.length,l:"sessions today"}].map(({v,l})=>
-          <div key={l} className="metric" style={{flex:1,textAlign:"center",background:"#f1efe8",borderRadius:16,padding:"12px 8px"}}>
+          <div key={l} className="metric" style={{flex:1,textAlign:"center",background:"#FFF7EF",borderRadius:16,padding:"12px 8px"}}>
             <p style={{fontSize:22,fontWeight:500,margin:0}}>{v}</p>
-            <p style={{fontSize:12,color:"#888780",margin:0}}>{l}</p>
+            <p style={{fontSize:12,color:"#A08C8C",margin:0}}>{l}</p>
           </div>)}
       </div>
-      <p style={{fontSize:12,color:"#888780",textAlign:"center",margin:0}}>+{XP_PER_ACTION} XP every 10 minutes of tracked time · next in {Math.floor(nextMilestoneSec/60)}m {nextMilestoneSec%60}s</p>
+      <p style={{fontSize:12,color:"#A08C8C",textAlign:"center",margin:0}}>+{XP_PER_ACTION} XP every 10 minutes of tracked time · next in {Math.floor(nextMilestoneSec/60)}m {nextMilestoneSec%60}s</p>
       {byCat.length>0&&<Card>
-        <p style={{fontSize:13,fontWeight:500,margin:"0 0 10px",color:"#888780"}}>Time by category</p>
+        <p style={{fontSize:13,fontWeight:500,margin:"0 0 10px",color:"#A08C8C"}}>Time by category</p>
         <div style={{display:"flex",flexDirection:"column",gap:8}}>
           {byCat.map(({cat:c,secs})=>{ const pct=totalS?Math.round(secs/totalS*100):0; const ccol=COLORS[CAT_COLOR[c]||"green"]; return(
             <div key={c}>
-              <div style={{display:"flex",justifyContent:"space-between",fontSize:13,marginBottom:3}}><span>{c}</span><span style={{color:"#888780"}}>{fmt(secs)} · {pct}%</span></div>
-              <div className="bar-bg" style={{height:8,borderRadius:20,background:"#e8e6e0",overflow:"hidden"}}><div style={{height:"100%",width:`${pct}%`,background:ccol.mid,borderRadius:20}}/></div>
+              <div style={{display:"flex",justifyContent:"space-between",fontSize:13,marginBottom:3}}><span>{c}</span><span style={{color:"#A08C8C"}}>{fmt(secs)} · {pct}%</span></div>
+              <div className="bar-bg" style={{height:8,borderRadius:20,background:"#FBDDD7",overflow:"hidden"}}><div style={{height:"100%",width:`${pct}%`,background:ccol.mid,borderRadius:20}}/></div>
             </div>);})}
         </div>
       </Card>}
       <div style={{display:"flex",flexDirection:"column",gap:8}}>
-        <p style={{fontSize:13,fontWeight:500,color:"#888780"}}>Log</p>
-        {entries.length===0&&<p style={{color:"#888780",fontSize:14,textAlign:"center",padding:"1.5rem 0"}}>No sessions logged yet</p>}
+        <p style={{fontSize:13,fontWeight:500,color:"#A08C8C"}}>Log</p>
+        {entries.length===0&&<p style={{color:"#A08C8C",fontSize:14,textAlign:"center",padding:"1.5rem 0"}}>No sessions logged yet</p>}
         {[...entries].reverse().map(e=>(
           <Card key={e.id} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 16px",borderRadius:16}}>
-            <div style={{flex:1}}><span style={{fontSize:14}}>{e.activity}</span><span style={{marginLeft:8,fontSize:12,color:"#888780"}}>{e.date}</span></div>
+            <div style={{flex:1}}><span style={{fontSize:14}}>{e.activity}</span><span style={{marginLeft:8,fontSize:12,color:"#A08C8C"}}>{e.date}</span></div>
             <Badge cat={e.cat} />
             <span style={{fontWeight:500,fontSize:14,minWidth:56,textAlign:"right"}}>{fmt(e.secs)}</span>
-            <button onClick={()=>remove(e.id)} style={{background:"none",border:"none",cursor:"pointer",color:"#888780",fontSize:18,lineHeight:1,padding:"2px 4px",borderRadius:8}}>×</button>
+            <button onClick={()=>remove(e.id)} style={{background:"none",border:"none",cursor:"pointer",color:"#A08C8C",fontSize:18,lineHeight:1,padding:"2px 4px",borderRadius:8}}>×</button>
           </Card>))}
       </div>
     </div>
@@ -1692,28 +1708,28 @@ function Habits({ xpApi, awards }) {
       </div>
       <div style={{display:"flex",gap:12}}>
         {[{v:`${doneToday}/${habits.length}`,l:"done today"},{v:`${habits.length?Math.round(doneToday/habits.length*100):0}%`,l:"completion rate"},{v:habits.reduce((a,h)=>Math.max(a,streak(h.completions)),0),l:"best streak"}].map(({v,l})=>
-          <div key={l} className="metric" style={{flex:1,textAlign:"center",background:"#f1efe8",borderRadius:16,padding:"12px 8px"}}>
+          <div key={l} className="metric" style={{flex:1,textAlign:"center",background:"#FFF7EF",borderRadius:16,padding:"12px 8px"}}>
             <p style={{fontSize:22,fontWeight:500,margin:0}}>{v}</p>
-            <p style={{fontSize:12,color:"#888780",margin:0}}>{l}</p>
+            <p style={{fontSize:12,color:"#A08C8C",margin:0}}>{l}</p>
           </div>)}
       </div>
-      <p style={{fontSize:12,color:"#888780",textAlign:"center",margin:0}}>+{XP_PER_ACTION} XP per check · bonus +{XP_PER_ACTION} XP every 7-day streak</p>
-      {habits.length===0&&<p style={{color:"#888780",fontSize:14,textAlign:"center",padding:"1.5rem 0"}}>Add your first habit above</p>}
+      <p style={{fontSize:12,color:"#A08C8C",textAlign:"center",margin:0}}>+{XP_PER_ACTION} XP per check · bonus +{XP_PER_ACTION} XP every 7-day streak</p>
+      {habits.length===0&&<p style={{color:"#A08C8C",fontSize:14,textAlign:"center",padding:"1.5rem 0"}}>Add your first habit above</p>}
       {habits.map(h=>{
         const done=h.completions.includes(td); const s=streak(h.completions); const ccol=COLORS[CAT_COLOR[h.cat]||"green"];
         return <Card key={h.id}>
           <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:10,flexWrap:"wrap"}}>
-            <button onClick={()=>toggle(h.id)} style={{width:28,height:28,borderRadius:50,border:`2px solid ${done?ccol.mid:"#d3d1c7"}`,background:done?ccol.mid:"transparent",cursor:"pointer",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:16}}>{done?"✓":""}</button>
+            <button onClick={()=>toggle(h.id)} style={{width:28,height:28,borderRadius:50,border:`2px solid ${done?ccol.mid:"#F3D9D6"}`,background:done?ccol.mid:"transparent",cursor:"pointer",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:16}}>{done?"✓":""}</button>
             <span style={{flex:1,fontSize:15,minWidth:120}}>{h.name}</span>
             <Badge cat={h.cat} />
             {s>0&&<span style={{fontSize:13,color:COLORS.amber.text,background:COLORS.amber.bg,borderRadius:20,padding:"2px 10px",border:`1px solid ${COLORS.amber.border}`}}>{s} day streak</span>}
-            <button onClick={()=>remove(h.id)} style={{background:"none",border:"none",cursor:"pointer",color:"#888780",fontSize:18,lineHeight:1,padding:"2px 4px",borderRadius:8}}>×</button>
+            <button onClick={()=>remove(h.id)} style={{background:"none",border:"none",cursor:"pointer",color:"#A08C8C",fontSize:18,lineHeight:1,padding:"2px 4px",borderRadius:8}}>×</button>
           </div>
           <div style={{display:"flex",gap:5}}>
-            {last7.map(d=>{ const f=h.completions.includes(d); const it=d===td; return <div key={d} style={{flex:1,height:10,borderRadius:10,background:f?ccol.mid:"#e8e6e0",border:it?`1.5px solid ${ccol.border}`:"none"}}/>; })}
+            {last7.map(d=>{ const f=h.completions.includes(d); const it=d===td; return <div key={d} style={{flex:1,height:10,borderRadius:10,background:f?ccol.mid:"#FBDDD7",border:it?`1.5px solid ${ccol.border}`:"none"}}/>; })}
           </div>
           <div style={{display:"flex",justifyContent:"space-between",marginTop:4}}>
-            {last7.map(d=><span key={d} style={{flex:1,fontSize:10,color:"#888780",textAlign:"center"}}>{"SMTWTFS"[new Date(d).getDay()]}</span>)}
+            {last7.map(d=><span key={d} style={{flex:1,fontSize:10,color:"#A08C8C",textAlign:"center"}}>{"SMTWTFS"[new Date(d).getDay()]}</span>)}
           </div>
         </Card>;
       })}
@@ -1733,47 +1749,44 @@ function Hydration({ xpApi, awards }) {
   useEffect(()=>save("pd_hydration_log",log),[log]);
   const todayE=log.filter(e=>e.date===td);
   const todayMl=todayE.reduce((a,e)=>a+e.ml,0);
-  const pct=Math.min(100,Math.round(todayMl/settings.goal*100));
+  // True percent — can exceed 100. Capped at 999 for sanity.
+  const truePct = Math.min(999, Math.round(todayMl/settings.goal*100));
+  // Visual fill cap: water can rise slightly above 100% for the "bonus" feeling, up to 115%.
+  const visualPct = Math.min(115, truePct);
   const col=COLORS[settings.theme]||COLORS.teal;
 
-  // Animation state: animPct is the *displayed* fill % (lags real pct, animates to it).
-  // wave is a sloshing oscillator amplitude that decays after each change.
-  const [animPct,setAnimPct] = useState(pct);
-  const [wave,setWave] = useState({amp:0, phase:0, ts:0});
+  // Animated fill (lags actual visualPct), and wave amplitude that decays after each change.
+  const [animPct,setAnimPct] = useState(visualPct);
+  const [wave,setWave] = useState({amp:0, phase:0});
   const animRef = useRef(null);
-  const prevPctRef = useRef(pct);
 
-  // When real pct changes, kick off an animation toward it.
   useEffect(()=>{
     const start = animPct;
-    const end = pct;
-    if(start === end){
-      // still keep the wave gently oscillating? no — keep flat when settled
-      return;
-    }
+    const end = visualPct;
+    if(Math.abs(start - end) < 0.05) return;
     const direction = end > start ? 1 : -1;
     const startTime = performance.now();
-    const duration = 650;            // total fill duration
-    const sloshAmp = 6 * direction;  // initial slosh height
-    const sloshDecay = 1.8;          // how fast amplitude decays
-    prevPctRef.current = start;
+    const distance = Math.abs(end - start);
+    // longer duration for larger jumps, with a soft floor
+    const duration = Math.min(1100, 480 + distance * 8);
+    const sloshAmp = (4 + Math.min(5, distance*0.15)) * direction;
+    const sloshDecay = 1.5;
 
     function frame(now){
-      const elapsed = (now - startTime) / 1000; // s
+      const elapsed = (now - startTime) / 1000;
       const t = Math.min(1, (now - startTime) / duration);
-      // ease-out for fill
-      const eased = 1 - Math.pow(1 - t, 2.5);
+      // ease-out-quint
+      const eased = 1 - Math.pow(1 - t, 3);
       const cur = start + (end - start) * eased;
-      // wave amp decays exponentially
       const ampNow = sloshAmp * Math.exp(-sloshDecay * elapsed);
-      const phase = elapsed * 9;       // wave speed
+      const phase = elapsed * 7;
       setAnimPct(cur);
-      setWave({ amp: ampNow, phase, ts: elapsed });
+      setWave({ amp: ampNow, phase });
       if(t < 1 || Math.abs(ampNow) > 0.15){
         animRef.current = requestAnimationFrame(frame);
       } else {
         setAnimPct(end);
-        setWave({ amp:0, phase:0, ts:0 });
+        setWave({ amp:0, phase:0 });
         animRef.current = null;
       }
     }
@@ -1781,7 +1794,7 @@ function Hydration({ xpApi, awards }) {
     animRef.current = requestAnimationFrame(frame);
     return ()=>{ if(animRef.current) cancelAnimationFrame(animRef.current); };
   // eslint-disable-next-line
-  },[pct]);
+  },[visualPct]);
 
   useEffect(()=>{
     const key = `water_goal_${td}`;
@@ -1792,38 +1805,86 @@ function Hydration({ xpApi, awards }) {
 
   function addWater(){setLog(l=>[...l,{id:Date.now(),ml:settings.portion,date:td}]);}
   function removeWater(){if(!todayE.length)return;const last=todayE[todayE.length-1];setLog(l=>l.filter(e=>e.id!==last.id));}
-  const cx=100,cy=100,r=85;
-  // Use animated pct for the fill height
-  const dispPct = animPct;
-  const fillY = (cy + r) - (r*2*dispPct/100);
-  const textOnWater = dispPct >= 52;
 
-  // Build the wavy top of the water using two sin-based control points + the slosh amp.
-  // We make a smooth Bezier wave whose midline is at fillY, with two bumps.
-  // Both bumps depend on wave.amp and wave.phase to give the sloshing.
+  const cx=100, cy=100, r=85;
+  const dispPct = animPct;
+  // fillY computed against the *displayed* fraction; clamped at -10 to allow slight overspill visual
+  const fillFrac = dispPct / 100;
+  const fillY = (cy + r) - (r*2*fillFrac);
+  const textOnWater = dispPct >= 52;
+  const goalReached = truePct >= 100;
+
+  // Smooth wave using a dense set of control points and cubic Bézier curves between them.
+  // Many segments + smooth control handles = no visible pixel/jagged edges.
   function wavePath(){
     if(dispPct <= 0) return null;
-    if(dispPct >= 99) {
-      // full — flat top
-      return `M ${cx-r} ${fillY} L ${cx+r} ${fillY} L ${cx+r} ${cy+r+2} L ${cx-r} ${cy+r+2} Z`;
+    // when nearly full or above, top is flat-ish but we still keep micro-wave for life
+    const a = wave.amp;
+    const p = wave.phase;
+    const segments = 12; // more = smoother
+    const left = cx - r, right = cx + r;
+    const step = (right - left) / segments;
+
+    // build sample points: y_i = fillY + sin(p + i*spacing) * amp_i
+    // amp shaped to be largest in middle, smaller at edges (like real water sloshing in a glass)
+    const pts = [];
+    for(let i=0;i<=segments;i++){
+      const x = left + i*step;
+      // bell curve weighting so the edges are quieter
+      const t = i/segments;
+      const bell = Math.sin(t*Math.PI);
+      const y = fillY + Math.sin(p + i*0.7) * a * bell;
+      pts.push([x,y]);
     }
-    const a = wave.amp;       // amplitude
-    const p = wave.phase;     // phase
-    // Three control points across x, oscillating slightly out of phase
-    const y0 = fillY + Math.sin(p) * a * 0.4;
-    const y1 = fillY - Math.sin(p + 0.9) * a;       // first bump
-    const y2 = fillY + Math.sin(p + 1.8) * a;       // dip
-    const y3 = fillY - Math.sin(p + 2.7) * a * 0.9; // second bump
-    const y4 = fillY + Math.sin(p + 3.6) * a * 0.4;
-    const x0 = cx-r, x4 = cx+r;
-    const x1 = cx - r/2, x2 = cx, x3 = cx + r/2;
-    // Quadratic curves through the points (using control-handles approximated as midpoints)
-    return `M ${x0} ${y0}
-            Q ${(x0+x1)/2} ${y1 - a*0.3} ${x1} ${y1}
-            Q ${(x1+x2)/2} ${y2 - a*0.2} ${x2} ${y2}
-            Q ${(x2+x3)/2} ${y3 + a*0.2} ${x3} ${y3}
-            Q ${(x3+x4)/2} ${y4 + a*0.3} ${x4} ${y4}
-            L ${cx+r} ${cy+r+2} L ${cx-r} ${cy+r+2} Z`;
+
+    // Build cubic Béziers using Catmull-Rom-like control handles
+    let d = `M ${pts[0][0].toFixed(2)} ${pts[0][1].toFixed(2)}`;
+    for(let i=0;i<pts.length-1;i++){
+      const p0 = pts[Math.max(0,i-1)];
+      const p1 = pts[i];
+      const p2 = pts[i+1];
+      const p3 = pts[Math.min(pts.length-1, i+2)];
+      // Catmull-Rom to cubic Bezier conversion (tension = 0.5)
+      const c1x = p1[0] + (p2[0]-p0[0])/6;
+      const c1y = p1[1] + (p2[1]-p0[1])/6;
+      const c2x = p2[0] - (p3[0]-p1[0])/6;
+      const c2y = p2[1] - (p3[1]-p1[1])/6;
+      d += ` C ${c1x.toFixed(2)} ${c1y.toFixed(2)}, ${c2x.toFixed(2)} ${c2y.toFixed(2)}, ${p2[0].toFixed(2)} ${p2[1].toFixed(2)}`;
+    }
+    d += ` L ${right} ${cy+r+2} L ${left} ${cy+r+2} Z`;
+    return d;
+  }
+
+  // Slight phase offset for back layer so the two waves overlap fluidly
+  function backWavePath(){
+    if(dispPct <= 0) return null;
+    const a = wave.amp;
+    const p = wave.phase + 1.5;
+    const segments = 12;
+    const left = cx - r, right = cx + r;
+    const step = (right - left) / segments;
+    const pts = [];
+    for(let i=0;i<=segments;i++){
+      const x = left + i*step;
+      const t = i/segments;
+      const bell = Math.sin(t*Math.PI);
+      const y = (fillY + 2) + Math.sin(p + i*0.55) * a * 0.7 * bell;
+      pts.push([x,y]);
+    }
+    let d = `M ${pts[0][0].toFixed(2)} ${pts[0][1].toFixed(2)}`;
+    for(let i=0;i<pts.length-1;i++){
+      const p0 = pts[Math.max(0,i-1)];
+      const p1 = pts[i];
+      const p2 = pts[i+1];
+      const p3 = pts[Math.min(pts.length-1, i+2)];
+      const c1x = p1[0] + (p2[0]-p0[0])/6;
+      const c1y = p1[1] + (p2[1]-p0[1])/6;
+      const c2x = p2[0] - (p3[0]-p1[0])/6;
+      const c2y = p2[1] - (p3[1]-p1[1])/6;
+      d += ` C ${c1x.toFixed(2)} ${c1y.toFixed(2)}, ${c2x.toFixed(2)} ${c2y.toFixed(2)}, ${p2[0].toFixed(2)} ${p2[1].toFixed(2)}`;
+    }
+    d += ` L ${right} ${cy+r+2} L ${left} ${cy+r+2} Z`;
+    return d;
   }
 
   return (
@@ -1831,16 +1892,16 @@ function Hydration({ xpApi, awards }) {
       <div style={{display:"flex",justifyContent:"flex-end"}}><SettingsButton open={settingsOpen} onToggle={()=>setSettingsOpen(s=>!s)} color={settings.theme}/></div>
       {settingsOpen&&<Card>
         <div style={{display:"flex",flexDirection:"column",gap:14}}>
-          <p style={{fontSize:13,fontWeight:500,color:"#888780",margin:0}}>Hydration settings</p>
+          <p style={{fontSize:13,fontWeight:600,color:"#A08C8C",margin:0}}>Hydration settings</p>
           <div style={{display:"flex",alignItems:"center",gap:10}}>
             <span style={{fontSize:14,flex:1}}>Portion size</span>
             <Sel value={String(settings.portion)} onChange={v=>setSettings(s=>({...s,portion:parseInt(v)}))} options={["125","250","500"]} />
-            <span style={{fontSize:13,color:"#888780"}}>ml</span>
+            <span style={{fontSize:13,color:"#A08C8C"}}>ml</span>
           </div>
           <div style={{display:"flex",alignItems:"center",gap:10}}>
             <span style={{fontSize:14,flex:1}}>Daily goal</span>
             <input type="number" value={settings.goal} min={250} max={10000} step={250} onChange={e=>setSettings(s=>({...s,goal:Math.max(250,parseInt(e.target.value)||2000)}))} style={{width:80}} />
-            <span style={{fontSize:13,color:"#888780"}}>ml</span>
+            <span style={{fontSize:13,color:"#A08C8C"}}>ml</span>
           </div>
           <div>
             <p style={{fontSize:14,marginBottom:8}}>Colour theme</p>
@@ -1853,50 +1914,65 @@ function Hydration({ xpApi, awards }) {
         </div>
       </Card>}
       <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:20,padding:"0.5rem 0"}}>
-        <div style={{position:"relative",width:200,height:200}}>
-          <svg width="200" height="200" viewBox="0 0 200 200">
+        <div style={{position:"relative",width:220,height:220}}>
+          <svg width="220" height="220" viewBox="0 0 200 200">
             <defs>
               <clipPath id="hydrationClip"><circle cx={cx} cy={cy} r={r}/></clipPath>
               <linearGradient id="waterGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={col.mid} stopOpacity="0.85"/>
-                <stop offset="100%" stopColor={col.mid} stopOpacity="0.55"/>
+                <stop offset="0%" stopColor={col.mid} stopOpacity="0.95"/>
+                <stop offset="100%" stopColor={col.mid} stopOpacity="0.65"/>
               </linearGradient>
+              <linearGradient id="waterGradBack" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={col.mid} stopOpacity="0.55"/>
+                <stop offset="100%" stopColor={col.mid} stopOpacity="0.35"/>
+              </linearGradient>
+              <radialGradient id="bowlBg" cx="50%" cy="40%" r="70%">
+                <stop offset="0%" stopColor="#fff" stopOpacity="0.8"/>
+                <stop offset="100%" stopColor={col.bg} stopOpacity="1"/>
+              </radialGradient>
             </defs>
-            <circle cx={cx} cy={cy} r={r} fill={col.bg}/>
+            {/* background circle */}
+            <circle cx={cx} cy={cy} r={r} fill="url(#bowlBg)"/>
             {dispPct>0 && <g clipPath="url(#hydrationClip)">
-              {/* back layer (slightly behind, deeper colour) */}
-              <path d={wavePath()} fill={col.mid} opacity="0.45"/>
-              {/* front layer (lighter, offset for parallax effect) */}
-              <path d={wavePath()} fill="url(#waterGrad)" transform={`translate(0, ${Math.sin(wave.phase+1)*wave.amp*0.15})`}/>
-              {/* sparkle highlights */}
-              {wave.amp > 0.4 && <>
-                <circle cx={cx-r/3} cy={fillY+8} r="2" fill="#fff" opacity={Math.min(0.6, Math.abs(wave.amp)/8)}/>
-                <circle cx={cx+r/3} cy={fillY+18} r="1.5" fill="#fff" opacity={Math.min(0.4, Math.abs(wave.amp)/10)}/>
+              {/* back layer */}
+              <path d={backWavePath()} fill="url(#waterGradBack)"/>
+              {/* front layer */}
+              <path d={wavePath()} fill="url(#waterGrad)"/>
+              {/* highlight curve on water surface */}
+              <path d={`M ${cx-r*0.5} ${fillY+2} Q ${cx-r*0.2} ${fillY+5} ${cx+r*0.1} ${fillY+2}`} stroke="#fff" strokeWidth="1.5" fill="none" opacity={Math.max(0, 0.45 - Math.abs(wave.amp)*0.04)} strokeLinecap="round"/>
+              {/* sparkle bubbles during slosh */}
+              {Math.abs(wave.amp) > 0.4 && <>
+                <circle cx={cx-r*0.3} cy={fillY+10} r="2.2" fill="#fff" opacity={Math.min(0.7, Math.abs(wave.amp)/7)}/>
+                <circle cx={cx+r*0.25} cy={fillY+22} r="1.4" fill="#fff" opacity={Math.min(0.5, Math.abs(wave.amp)/9)}/>
+                <circle cx={cx+r*0.45} cy={fillY+12} r="1" fill="#fff" opacity={Math.min(0.45, Math.abs(wave.amp)/10)}/>
               </>}
             </g>}
-            <circle cx={cx} cy={cy} r={r} fill="none" stroke={col.border} strokeWidth="2.5"/>
+            {/* outer ring */}
+            <circle cx={cx} cy={cy} r={r} fill="none" stroke={col.border} strokeWidth="3"/>
+            {/* goal-reached celebratory outer ring */}
+            {goalReached && <circle cx={cx} cy={cy} r={r+5} fill="none" stroke={col.mid} strokeWidth="2.5" strokeDasharray="3 4" opacity="0.7"/>}
           </svg>
           <div style={{position:"absolute",top:0,left:0,width:"100%",height:"100%",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",pointerEvents:"none"}}>
-            <span style={{fontSize:30,fontWeight:500,color:textOnWater?"#fff":col.text,lineHeight:1}}>{todayMl}</span>
-            <span style={{fontSize:12,color:textOnWater?"rgba(255,255,255,0.8)":"#888780",marginTop:2}}>of {settings.goal} ml</span>
-            {pct>=100&&<span style={{fontSize:11,marginTop:4,color:"#fff",fontWeight:500}}>Goal reached!</span>}
+            <span style={{fontSize:32,fontWeight:600,color:textOnWater?"#fff":col.text,lineHeight:1,textShadow:textOnWater?"0 1px 2px rgba(0,0,0,0.1)":"none"}}>{todayMl}</span>
+            <span style={{fontSize:12,color:textOnWater?"rgba(255,255,255,0.9)":"#A08C8C",marginTop:2,fontWeight:500}}>of {settings.goal} ml</span>
+            {truePct>=100 && <span style={{fontSize:11,marginTop:4,color:textOnWater?"#fff":col.text,fontWeight:600}}>{truePct>100?`+${truePct-100}% bonus`:"Goal reached!"}</span>}
           </div>
         </div>
-        <span style={{fontSize:13,color:col.text,background:col.bg,borderRadius:20,padding:"4px 14px",border:`1px solid ${col.border}`}}>{pct}% of daily goal</span>
+        <span style={{fontSize:13,color:col.text,background:col.bg,borderRadius:20,padding:"5px 16px",border:`1.5px solid ${col.border}`,fontWeight:500}}>{truePct}% of daily goal</span>
         <div style={{display:"flex",alignItems:"center",gap:24}}>
-          <button onClick={removeWater} disabled={!todayE.length} style={{width:52,height:52,borderRadius:"50%",background:"transparent",border:"1.5px solid #d3d1c7",color:"#888780",fontSize:26,cursor:todayE.length?"pointer":"default",display:"flex",alignItems:"center",justifyContent:"center",opacity:todayE.length?1:0.4}}>−</button>
+          <button onClick={removeWater} disabled={!todayE.length} style={{width:54,height:54,borderRadius:"50%",background:"#FFFBF7",border:"1.5px solid #F3D9D6",color:"#A08C8C",fontSize:28,cursor:todayE.length?"pointer":"default",display:"flex",alignItems:"center",justifyContent:"center",opacity:todayE.length?1:0.4,fontWeight:500,boxShadow:"0 2px 6px rgba(180, 130, 130, 0.08)"}}>−</button>
           <div style={{textAlign:"center",minWidth:70}}>
-            <p style={{fontSize:13,color:"#888780",margin:0}}>{settings.portion} ml</p>
-            <p style={{fontSize:11,color:"#aaa8a2",margin:0}}>per tap</p>
+            <p style={{fontSize:14,color:"#665555",margin:0,fontWeight:600}}>{settings.portion} ml</p>
+            <p style={{fontSize:11,color:"#A08C8C",margin:0}}>per tap</p>
           </div>
-          <button onClick={addWater} style={{width:52,height:52,borderRadius:"50%",background:col.mid,border:"none",color:"#fff",fontSize:26,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
+          <button onClick={addWater} style={{width:54,height:54,borderRadius:"50%",background:col.mid,border:"none",color:"#fff",fontSize:28,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:500,boxShadow:`0 4px 12px ${col.mid}55`}}>+</button>
         </div>
       </div>
       <div style={{display:"flex",gap:12}}>
         {[{v:todayMl,l:"ml today"},{v:settings.goal,l:"ml goal"},{v:todayE.length,l:"portions"}].map(({v,l})=>
-          <div key={l} className="metric" style={{flex:1,textAlign:"center",background:"#f1efe8",borderRadius:16,padding:"12px 8px"}}>
-            <p style={{fontSize:22,fontWeight:500,margin:0}}>{v}</p>
-            <p style={{fontSize:12,color:"#888780",margin:0}}>{l}</p>
+          <div key={l} className="metric" style={{flex:1,textAlign:"center",background:"#FFF7EF",borderRadius:18,padding:"12px 8px",border:"1.5px solid #F3E2D9"}}>
+            <p style={{fontSize:22,fontWeight:600,margin:0,color:"#665555"}}>{v}</p>
+            <p style={{fontSize:12,color:"#A08C8C",margin:0}}>{l}</p>
           </div>)}
       </div>
     </div>
@@ -1968,39 +2044,39 @@ function MoodLogger() {
       <div style={{display:"flex",justifyContent:"flex-end"}}><SettingsButton open={settingsOpen} onToggle={()=>setSettingsOpen(s=>!s)} color={settings.theme}/></div>
       {settingsOpen&&<ThemeSettingsCard value={settings.theme} onChange={v=>setSettings(s=>({...s,theme:v}))} />}
       <Card>
-        <p style={{fontSize:13,fontWeight:500,color:"#888780",margin:"0 0 14px",textAlign:"center"}}>How are you feeling today?</p>
+        <p style={{fontSize:13,fontWeight:500,color:"#A08C8C",margin:"0 0 14px",textAlign:"center"}}>How are you feeling today?</p>
         <div style={{display:"flex",justifyContent:"space-between",gap:8,alignItems:"flex-end"}}>
           {MOODS.map(m=>(
             <button key={m.key} onClick={()=>pick(m.key)} style={{background:"none",border:"none",padding:0,cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:4,flex:1,opacity:todays&&todays!==m.key?0.4:1,transform:todays===m.key?"scale(1.08)":"scale(1)",transition:"all 0.2s"}}>
               <MoodFace moodKey={m.key} size={48} glow={todays===m.key}/>
-              <span style={{fontSize:11,color:todays===m.key?COLORS[m.color].text:"#888780",fontWeight:todays===m.key?500:400}}>{m.label}</span>
+              <span style={{fontSize:11,color:todays===m.key?COLORS[m.color].text:"#A08C8C",fontWeight:todays===m.key?500:400}}>{m.label}</span>
             </button>
           ))}
         </div>
-        {todays&&<p style={{fontSize:12,color:"#888780",textAlign:"center",marginTop:14}}>Logged for today · tap a different face to change</p>}
+        {todays&&<p style={{fontSize:12,color:"#A08C8C",textAlign:"center",marginTop:14}}>Logged for today · tap a different face to change</p>}
       </Card>
       <Card>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
-          <button onClick={prevMonth} style={{background:"none",border:"none",cursor:"pointer",fontSize:18,color:"#888780",padding:"2px 8px",borderRadius:8}}>‹</button>
+          <button onClick={prevMonth} style={{background:"none",border:"none",cursor:"pointer",fontSize:18,color:"#A08C8C",padding:"2px 8px",borderRadius:8}}>‹</button>
           <p style={{fontSize:14,fontWeight:500,margin:0}}>{monthName}</p>
-          <button onClick={nextMonth} style={{background:"none",border:"none",cursor:"pointer",fontSize:18,color:"#888780",padding:"2px 8px",borderRadius:8}}>›</button>
+          <button onClick={nextMonth} style={{background:"none",border:"none",cursor:"pointer",fontSize:18,color:"#A08C8C",padding:"2px 8px",borderRadius:8}}>›</button>
         </div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4,marginBottom:6}}>
-          {["S","M","T","W","T","F","S"].map((d,i)=><div key={i} style={{textAlign:"center",fontSize:10,color:"#aaa8a2"}}>{d}</div>)}
+          {["S","M","T","W","T","F","S"].map((d,i)=><div key={i} style={{textAlign:"center",fontSize:10,color:"#C7B3B3"}}>{d}</div>)}
         </div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4}}>
           {cells.map((cell,i)=>{
             if(!cell) return <div key={i}/>;
             const isToday = cell.ds===td;
             return <div key={i} style={{minHeight:36,aspectRatio:"1/1",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",borderRadius:10,background:isToday?col.bg:"transparent",border:isToday?`1px solid ${col.border}`:"1px solid transparent",gap:1,padding:2}}>
-              <span style={{fontSize:9,color:"#aaa8a2",lineHeight:1}}>{cell.d}</span>
+              <span style={{fontSize:9,color:"#C7B3B3",lineHeight:1}}>{cell.d}</span>
               {cell.mood && <MoodFace moodKey={cell.mood} size={22}/>}
             </div>;
           })}
         </div>
       </Card>
       <Card>
-        <p style={{fontSize:13,fontWeight:500,color:"#888780",margin:"0 0 10px"}}>All-time mood</p>
+        <p style={{fontSize:13,fontWeight:500,color:"#A08C8C",margin:"0 0 10px"}}>All-time mood</p>
         <div style={{display:"flex",justifyContent:"space-between",gap:8}}>
           {moodCounts.map(m=>(
             <div key={m.key} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
@@ -2009,7 +2085,7 @@ function MoodLogger() {
             </div>
           ))}
         </div>
-        <p style={{fontSize:11,color:"#aaa8a2",textAlign:"center",marginTop:10}}>{totalLogged} days logged</p>
+        <p style={{fontSize:11,color:"#C7B3B3",textAlign:"center",marginTop:10}}>{totalLogged} days logged</p>
       </Card>
     </div>
   );
@@ -2168,8 +2244,8 @@ function MySpace({ xpApi, onClose }) {
   return (
     <div style={{display:"flex",flexDirection:"column",gap:16}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-        <p style={{fontSize:13,color:"#888780",margin:0}}>Level <span style={{color:COLORS.purple.text,fontWeight:500}}>{xp.level}</span> · {xp.xp}/{XP_PER_LEVEL} XP to next</p>
-        <button onClick={onClose} style={{background:"transparent",border:"1px solid #d3d1c7",borderRadius:20,padding:"4px 12px",fontSize:12,color:"#888780",cursor:"pointer"}}>Back to dashboard</button>
+        <p style={{fontSize:13,color:"#A08C8C",margin:0}}>Level <span style={{color:COLORS.purple.text,fontWeight:500}}>{xp.level}</span> · {xp.xp}/{XP_PER_LEVEL} XP to next</p>
+        <button onClick={onClose} style={{background:"transparent",border:"1px solid #d3d1c7",borderRadius:20,padding:"4px 12px",fontSize:12,color:"#A08C8C",cursor:"pointer"}}>Back to dashboard</button>
       </div>
 
       {/* Room — use padding-bottom hack for guaranteed square in any browser */}
@@ -2178,9 +2254,9 @@ function MySpace({ xpApi, onClose }) {
           <RoomBackground activeWall={activeWall} activeFloor={activeFloor}/>
           {/* wall/floor divider */}
           <div style={{position:"absolute",left:0,right:0,top:"60%",height:1,background:"rgba(0,0,0,0.08)"}}/>
-          {room.length===0 && <div style={{position:"absolute",left:"10%",right:"10%",top:"40%",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",color:"#665f55",fontSize:13,textAlign:"center",padding:"10px 16px",background:"rgba(255,255,255,0.65)",borderRadius:14}}>
+          {room.length===0 && <div style={{position:"absolute",left:"10%",right:"10%",top:"40%",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",color:"#665555",fontSize:13,textAlign:"center",padding:"10px 16px",background:"rgba(255,255,255,0.65)",borderRadius:14}}>
             <span>Your room is empty.</span>
-            <span style={{marginTop:4,fontSize:12,color:"#888780"}}>Open the bag and drag furniture in.</span>
+            <span style={{marginTop:4,fontSize:12,color:"#A08C8C"}}>Open the bag and drag furniture in.</span>
           </div>}
           {room.map(item=>(
             <div key={item.id} className="furn-item"
@@ -2194,7 +2270,7 @@ function MySpace({ xpApi, onClose }) {
               </div>
             </div>
           ))}
-          <button id="bag-icon" onClick={()=>setBagOpen(o=>!o)} style={{position:"absolute",left:12,bottom:12,width:50,height:50,borderRadius:"50%",background:bagOpen?COLORS.amber.bg:"#fff",border:`2px solid ${bagOpen?COLORS.amber.border:"#b4b2a9"}`,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 2px 8px rgba(0,0,0,0.15)",zIndex:5,padding:0}}>
+          <button id="bag-icon" onClick={()=>setBagOpen(o=>!o)} style={{position:"absolute",left:12,bottom:12,width:50,height:50,borderRadius:"50%",background:bagOpen?COLORS.amber.bg:"#fff",border:`2px solid ${bagOpen?COLORS.amber.border:"#E5B4AE"}`,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 2px 8px rgba(0,0,0,0.15)",zIndex:5,padding:0}}>
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={COLORS.amber.text} strokeWidth="1.6">
               <path d="M6 8h12l-1 12H7L6 8z"/>
               <path d="M9 8V6a3 3 0 0 1 6 0v2"/>
@@ -2209,7 +2285,7 @@ function MySpace({ xpApi, onClose }) {
           {tabs.map(t=><Pill key={t.key} active={bagTab===t.key} onClick={()=>setBagTab(t.key)} color="amber">{t.label}</Pill>)}
         </div>
         {currentTab.items.length===0
-          ? <p style={{fontSize:13,color:"#aaa8a2",textAlign:"center",padding:"1rem 0",fontStyle:currentTab.mystery?"italic":"normal",letterSpacing:currentTab.mystery?2:0}}>{currentTab.mystery ? "???" : `Level up to unlock ${bagTab}`}</p>
+          ? <p style={{fontSize:13,color:"#C7B3B3",textAlign:"center",padding:"1rem 0",fontStyle:currentTab.mystery?"italic":"normal",letterSpacing:currentTab.mystery?2:0}}>{currentTab.mystery ? "???" : `Level up to unlock ${bagTab}`}</p>
           : <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill, minmax(74px, 1fr))",gap:10}}>
               {currentTab.items.map(item=>(
                 <div key={item.id} className="furn-item"
@@ -2217,27 +2293,27 @@ function MySpace({ xpApi, onClose }) {
                      onTouchStart={e=>startDrag(e,item,"inv")}
                      style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4,padding:8,borderRadius:14,background:"#faf7ef",border:"1px solid #e0ddd0",cursor:"grab",opacity:drag&&drag.id===item.id?0.3:1}}>
                   <InventoryItemPreview it={item} size={42}/>
-                  <span style={{fontSize:9,color:"#665f55",textAlign:"center",lineHeight:1.1}}>{inventoryItemName(item)}</span>
-                  <span style={{fontSize:9,color:"#888780"}}>Lv {item.level}</span>
+                  <span style={{fontSize:9,color:"#665555",textAlign:"center",lineHeight:1.1}}>{inventoryItemName(item)}</span>
+                  <span style={{fontSize:9,color:"#A08C8C"}}>Lv {item.level}</span>
                 </div>
               ))}
             </div>}
         {(activeWall || activeFloor) && <div style={{marginTop:12,paddingTop:12,borderTop:"1px solid #e8e6e0",display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
-          <p style={{fontSize:11,color:"#888780",margin:0,width:"100%"}}>Active surfaces (tap to remove):</p>
+          <p style={{fontSize:11,color:"#A08C8C",margin:0,width:"100%"}}>Active surfaces (tap to remove):</p>
           {activeWall && <button onClick={()=>{
             // return active wall to inventory
             setInv(iv=>[...iv,{id:`item_back_wall_${Date.now()}`,level:activeWall.level,kind:"wallpaper",design:activeWall.design,plain:activeWall.plain}]);
             setActiveWall(null);
           }} style={{display:"flex",alignItems:"center",gap:6,padding:"4px 10px",borderRadius:14,background:"#faf7ef",border:"1px solid #e0ddd0",cursor:"pointer"}}>
             <WallSwatch design={activeWall.design} plain={activeWall.plain} size={24}/>
-            <span style={{fontSize:11,color:"#665f55"}}>Wall</span>
+            <span style={{fontSize:11,color:"#665555"}}>Wall</span>
           </button>}
           {activeFloor && <button onClick={()=>{
             setInv(iv=>[...iv,{id:`item_back_floor_${Date.now()}`,level:activeFloor.level,kind:"floor",design:activeFloor.design,plain:activeFloor.plain}]);
             setActiveFloor(null);
           }} style={{display:"flex",alignItems:"center",gap:6,padding:"4px 10px",borderRadius:14,background:"#faf7ef",border:"1px solid #e0ddd0",cursor:"pointer"}}>
             <FloorSwatch design={activeFloor.design} plain={activeFloor.plain} size={24}/>
-            <span style={{fontSize:11,color:"#665f55"}}>Floor</span>
+            <span style={{fontSize:11,color:"#665555"}}>Floor</span>
           </button>}
         </div>}
       </Card>}
@@ -2300,7 +2376,7 @@ function HelpButton(){
       position:"fixed", right:14, bottom:14, width:38, height:38, borderRadius:"50%",
       background:"#fff", border:"1.5px solid #b4b2a9", cursor:"pointer",
       display:"flex", alignItems:"center", justifyContent:"center",
-      fontSize:18, fontWeight:500, color:"#665f55",
+      fontSize:18, fontWeight:500, color:"#665555",
       boxShadow:"0 2px 8px rgba(0,0,0,0.12)", zIndex:9000, padding:0
     }}>?</button>
     {open && <div onClick={()=>setOpen(false)} style={{
@@ -2310,16 +2386,16 @@ function HelpButton(){
       <div onClick={e=>e.stopPropagation()} style={{
         background:"#fff", borderRadius:20, padding:"1.25rem 1.25rem 1rem",
         maxWidth:480, width:"100%", maxHeight:"85vh", overflowY:"auto",
-        border:"0.5px solid #d3d1c7"
+        border:"1.5px solid #d3d1c7"
       }}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
           <h3 style={{fontSize:17,fontWeight:500,margin:0}}>How it works</h3>
-          <button onClick={()=>setOpen(false)} style={{background:"none",border:"none",fontSize:22,color:"#888780",cursor:"pointer",padding:"0 6px",lineHeight:1}}>×</button>
+          <button onClick={()=>setOpen(false)} style={{background:"none",border:"none",fontSize:22,color:"#A08C8C",cursor:"pointer",padding:"0 6px",lineHeight:1}}>×</button>
         </div>
         <div style={{display:"flex",flexDirection:"column",gap:10}}>
           {sections.map(s=>(
             <div key={s.title} style={{padding:"10px 12px",background:"#faf7ef",borderRadius:12,border:"1px solid #ebe6d8"}}>
-              <p style={{fontSize:13,fontWeight:500,margin:"0 0 4px",color:"#3a3935"}}>{s.title}</p>
+              <p style={{fontSize:13,fontWeight:500,margin:"0 0 4px",color:"#4A3D3D"}}>{s.title}</p>
               <p style={{fontSize:12,color:"#666",margin:0,lineHeight:1.55}}>{s.body}</p>
             </div>
           ))}
@@ -2393,12 +2469,12 @@ function App() {
   if(tab==="space"){
     return <div style={{maxWidth:660,margin:"0 auto",padding:"1.5rem 1rem"}}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"1rem"}}>
-        <h2 style={{fontSize:20,fontWeight:500,margin:0}}>My space</h2>
-        <button onClick={()=>setTab("todos")} style={{display:"flex",alignItems:"center",gap:6,background:"#fff",border:"1.5px solid #d3d1c7",borderRadius:23,padding:"4px 12px 4px 6px",cursor:"pointer"}}>
-          <span style={{width:32,height:32,borderRadius:"50%",background:COLORS.purple.bg,display:"flex",alignItems:"center",justifyContent:"center"}}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={COLORS.purple.text} strokeWidth="1.8"><path d="M3 11l9-7 9 7v9a2 2 0 0 1-2 2h-4v-7h-6v7H5a2 2 0 0 1-2-2v-9z"/></svg>
+        <h2 style={{fontSize:22,fontWeight:700,margin:0,color:"#665555",letterSpacing:"-0.5px"}}>My space</h2>
+        <button onClick={()=>setTab("todos")} style={{display:"flex",alignItems:"center",gap:8,background:"#FFFBF7",border:"1.5px solid #F3D9D6",borderRadius:30,padding:"5px 14px 5px 6px",cursor:"pointer",boxShadow:"0 2px 8px rgba(180, 130, 130, 0.1)"}}>
+          <span style={{width:34,height:34,borderRadius:"50%",background:COLORS.pink.bg,display:"flex",alignItems:"center",justifyContent:"center",border:`1.5px solid ${COLORS.pink.border}`}}>
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke={COLORS.pink.text} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 11l9-7 9 7v9a2 2 0 0 1-2 2h-4v-7h-6v7H5a2 2 0 0 1-2-2v-9z"/></svg>
           </span>
-          <span style={{fontSize:13,color:"#3a3935",fontWeight:500}}>Home</span>
+          <span style={{fontSize:14,color:"#665555",fontWeight:600}}>Home</span>
         </button>
       </div>
       <MySpace xpApi={xpApi} onClose={()=>setTab("todos")}/>
@@ -2410,29 +2486,29 @@ function App() {
   return (
     <div style={{maxWidth:660,margin:"0 auto",padding:"1.5rem 1rem",position:"relative"}}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"1rem"}}>
-        <h2 style={{fontSize:20,fontWeight:500,margin:0}}>My dashboard</h2>
+        <h2 style={{fontSize:22,fontWeight:700,margin:0,color:"#665555",letterSpacing:"-0.5px"}}>My dashboard</h2>
         {/* Home / My space access — only entry point */}
         <button onClick={()=>setTab("space")} className={xpApi.flash?"lvflash":""}
-          style={{display:"flex",alignItems:"center",gap:6,background:"#fff",border:"1.5px solid #d3d1c7",borderRadius:23,padding:"4px 12px 4px 6px",cursor:"pointer",position:"relative"}}>
-          <span style={{width:32,height:32,borderRadius:"50%",background:COLORS.purple.bg,display:"flex",alignItems:"center",justifyContent:"center"}}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={COLORS.purple.text} strokeWidth="1.8"><path d="M3 11l9-7 9 7v9a2 2 0 0 1-2 2h-4v-7h-6v7H5a2 2 0 0 1-2-2v-9z"/></svg>
+          style={{display:"flex",alignItems:"center",gap:8,background:"#FFFBF7",border:"1.5px solid #F3D9D6",borderRadius:30,padding:"5px 14px 5px 6px",cursor:"pointer",position:"relative",boxShadow:"0 2px 8px rgba(180, 130, 130, 0.1)"}}>
+          <span style={{width:34,height:34,borderRadius:"50%",background:COLORS.pink.bg,display:"flex",alignItems:"center",justifyContent:"center",border:`1.5px solid ${COLORS.pink.border}`}}>
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke={COLORS.pink.text} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 11l9-7 9 7v9a2 2 0 0 1-2 2h-4v-7h-6v7H5a2 2 0 0 1-2-2v-9z"/></svg>
           </span>
-          <span style={{fontSize:13,color:"#3a3935",fontWeight:500}}>Home</span>
-          {xpApi.flash && <span style={{position:"absolute",top:-8,right:-8,background:COLORS.amber.mid,color:"#fff",fontSize:9,borderRadius:20,padding:"2px 6px",fontWeight:500,whiteSpace:"nowrap"}}>Lv {xpApi.flash.level}!</span>}
+          <span style={{fontSize:14,color:"#665555",fontWeight:600}}>Home</span>
+          {xpApi.flash && <span style={{position:"absolute",top:-8,right:-8,background:COLORS.amber.mid,color:"#fff",fontSize:9,borderRadius:20,padding:"2px 6px",fontWeight:600,whiteSpace:"nowrap"}}>Lv {xpApi.flash.level}!</span>}
         </button>
       </div>
 
       {/* XP bar */}
-      <div style={{marginBottom:"1rem",display:"flex",alignItems:"center",gap:10}}>
-        <span style={{fontSize:11,color:"#888780",fontWeight:500,minWidth:42}}>Lv {xpApi.xp.level}</span>
-        <div className="bar-bg" style={{flex:1,height:6,borderRadius:20,background:"#e8e6e0",overflow:"hidden"}}>
-          <div style={{height:"100%",width:`${(xpApi.xp.xp/XP_PER_LEVEL)*100}%`,background:`linear-gradient(90deg, ${COLORS.purple.mid}, ${COLORS.pink.mid})`,borderRadius:20,transition:"width 0.4s"}}/>
+      <div style={{marginBottom:"1.1rem",display:"flex",alignItems:"center",gap:10,background:"#FFFBF7",border:"1.5px solid #F3E2D9",borderRadius:30,padding:"6px 14px"}}>
+        <span style={{fontSize:11,color:COLORS.pink.text,fontWeight:600,minWidth:42}}>Lv {xpApi.xp.level}</span>
+        <div className="bar-bg" style={{flex:1,height:8,borderRadius:20,background:"#FBDDD7",overflow:"hidden"}}>
+          <div style={{height:"100%",width:`${(xpApi.xp.xp/XP_PER_LEVEL)*100}%`,background:`linear-gradient(90deg, ${COLORS.pink.mid}, ${COLORS.purple.mid})`,borderRadius:20,transition:"width 0.4s"}}/>
         </div>
-        <span style={{fontSize:11,color:"#888780",minWidth:48,textAlign:"right"}}>{xpApi.xp.xp}/{XP_PER_LEVEL}</span>
+        <span style={{fontSize:11,color:"#A08C8C",minWidth:48,textAlign:"right",fontWeight:500}}>{xpApi.xp.xp}/{XP_PER_LEVEL}</span>
       </div>
 
-      {/* Shrinkable tab bar — all on one line, never wraps */}
-      <div className="tab-bar" style={{background:"#ebe9e2",borderRadius:40,padding:"5px 6px",marginBottom:"1.25rem"}}>
+      {/* Shrinkable tab bar — pastel pill row */}
+      <div className="tab-bar" style={{background:"#FCEAE7",borderRadius:40,padding:"5px 6px",marginBottom:"1.25rem",border:"1.5px solid #F3D9D6"}}>
         <div className="tab-bar-inner">
           {[
             ["todos","To-do"],
@@ -2443,10 +2519,11 @@ function App() {
           ].map(([k,label])=>{
             const active = tab===k;
             return <button key={k} className="tab-btn" onClick={()=>setTab(k)} style={{
-              border: active?"1.5px solid #b4b2a9":"1.5px solid transparent",
-              background: active?"#fff":"transparent",
-              color: active?"#1a1a18":"#888780",
-              fontWeight: active?500:400,
+              border: "none",
+              background: active?"#FFFBF7":"transparent",
+              color: active?"#665555":"#A08C8C",
+              fontWeight: active?600:500,
+              boxShadow: active?"0 2px 6px rgba(180,130,130,0.12)":"none",
             }}>{label}</button>;
           })}
         </div>
@@ -2486,7 +2563,7 @@ class ErrorBoundary extends React.Component {
         <p style={{fontSize:14,color:"#555",margin:"0 0 12px",lineHeight:1.5}}>The app hit an error and couldn't load. This is often caused by saved data from an older version.</p>
         <p style={{fontSize:12,fontFamily:"monospace",background:"#FAECE7",color:"#712B13",padding:"10px 12px",borderRadius:10,margin:"0 0 14px",wordBreak:"break-word"}}>{String(this.state.error && this.state.error.message)}</p>
         <button onClick={()=>this.reset()} style={{borderRadius:14,padding:"8px 20px",background:"#D85A30",color:"#fff",border:"none",fontWeight:500,fontSize:14,cursor:"pointer"}}>Reset saved data</button>
-        <p style={{fontSize:11,color:"#888780",marginTop:14}}>If the error keeps happening after reset, please report it.</p>
+        <p style={{fontSize:11,color:"#A08C8C",marginTop:14}}>If the error keeps happening after reset, please report it.</p>
       </div>;
     }
     return this.props.children;
