@@ -16,7 +16,7 @@
     font-size: 14px; background: #f1efe8; color: #1a1a18; outline: none;
   }
   input[type=text]:focus, input[type=date]:focus, input[type=number]:focus, select:focus { border-color: #888780; }
-  input[type=checkbox] { accent-color: var(--accent-mid, #7f77dd); }
+  input[type=checkbox] { accent-color: #7f77dd; }
   input[type=number] { -moz-appearance: textfield; }
   input[type=number]::-webkit-outer-spin-button, input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
   @media (prefers-color-scheme: dark) {
@@ -26,18 +26,26 @@
     .tab-bar { background: #2c2c2a !important; }
     .metric { background: #2c2c2a !important; }
     .bar-bg { background: #444441 !important; }
-    .room-floor { background: #2c2c2a !important; }
   }
   .furn-item { user-select: none; -webkit-user-select: none; touch-action: none; }
-  .level-up-flash { animation: lvlflash 1.2s ease-out; }
-  @keyframes lvlflash { 0%{transform:scale(0.6);opacity:0;} 30%{transform:scale(1.1);opacity:1;} 100%{transform:scale(1);opacity:1;} }
+  .lvflash { animation: lvflashAnim 1.2s ease-out; }
+  @keyframes lvflashAnim { 0%{transform:scale(0.6);opacity:0;} 30%{transform:scale(1.1);opacity:1;} 100%{transform:scale(1);opacity:1;} }
+  @keyframes starTwinkle { 0%,100%{opacity:0.3;transform:scale(0.8);} 50%{opacity:1;transform:scale(1.1);} }
+  @keyframes goldShine { 0%,100%{filter:drop-shadow(0 0 3px gold);} 50%{filter:drop-shadow(0 0 10px gold);} }
+  @keyframes fadeUp { 0%{opacity:0;transform:translateY(20px);} 100%{opacity:1;transform:translateY(0);} }
+  @keyframes celebPop { 0%{opacity:0;transform:scale(0.5);} 60%{transform:scale(1.1);} 100%{opacity:1;transform:scale(1);} }
+  /* Shrinkable tab bar — labels truncate, never wrap */
+  .tab-bar-inner { display:flex; gap:4px; min-width:0; }
+  .tab-btn { flex:1 1 0; min-width:0; padding:8px 6px; border-radius:40px; font-size:13px; cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  @media (max-width: 480px) { .tab-btn { font-size:11px; padding:7px 4px; } }
+  @media (max-width: 380px) { .tab-btn { font-size:10px; padding:6px 3px; } }
 </style>
 </head>
 <body>
 <div id="root"></div>
 <script type="text/babel">
 const { useState, useEffect, useRef, useMemo } = React;
- 
+
 const COLORS = {
   purple: { bg: "#EEEDFE", border: "#AFA9EC", text: "#3C3489", mid: "#7F77DD" },
   teal:   { bg: "#E1F5EE", border: "#5DCAA5", text: "#085041", mid: "#1D9E75" },
@@ -52,28 +60,77 @@ const CAT_COLOR = { Work:"purple", Personal:"teal", Health:"coral", Learning:"am
 const URGENCY_OPTIONS = ["Low","Medium","High","Critical"];
 const URGENCY_RANK = { Critical:0, High:1, Medium:2, Low:3 };
 const URGENCY_COLOR = { Critical:"coral", High:"amber", Medium:"purple", Low:"green" };
- 
+
 function load(k,fb){ try{ const v=localStorage.getItem(k); return v?JSON.parse(v):fb; }catch{ return fb; } }
 function save(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch{} }
 function today(){ return new Date().toISOString().slice(0,10); }
 function fmt(secs){ const h=Math.floor(secs/3600),m=Math.floor((secs%3600)/60),s=secs%60; if(h>0)return`${h}h ${m}m`; return`${m}m ${s}s`; }
 function fmtClock(secs){ const m=Math.floor(secs/60),s=secs%60; return `${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`; }
- 
-// ============ XP SYSTEM ============
-// xpForLevel(n) -> xp needed to go from level n to n+1 (always 70 per current spec)
+
+// ============================================================
+// XP / LEVEL / REWARD SYSTEM
+// ============================================================
 const XP_PER_LEVEL = 70;
 const XP_PER_ACTION = 5;
 const MAX_LEVEL = 100;
- 
+
+// Rewards per level:
+// L1..29  -> 1 furniture (29 unique designs)
+// L30..39 -> 1 furniture + 1 PLAIN wallpaper or floor (alternating: 30=wall, 31=floor...)
+//           5 plain walls (indices 0..4), 5 plain floors (indices 0..4)
+// L40..99 -> 1 furniture + 1 TEXTURED wallpaper or floor (alternating: 40=wall, 41=floor...)
+//           30 textured walls, 30 textured floors (indices 0..29)
+// L100   -> golden set of 5 special items (no furniture/wallpaper this level)
+function rewardsForLevel(level){
+  if(level < 1 || level > MAX_LEVEL) return [];
+  if(level === 100){
+    return [
+      { kind:"golden", design:0 },
+      { kind:"golden", design:1 },
+      { kind:"golden", design:2 },
+      { kind:"golden", design:3 },
+      { kind:"golden", design:4 },
+    ];
+  }
+  if(level <= 29){
+    return [{ kind:"furniture", design: level-1 }];
+  }
+  if(level <= 39){
+    const rel = level - 30;            // 0..9
+    const isWall = (rel % 2 === 0);    // 30,32,34,36,38 = wall
+    const plainIdx = Math.floor(rel/2);// 0..4
+    return [
+      { kind:"furniture", design: level-1 }, // 29..38 (unique)
+      isWall
+        ? { kind:"wallpaper", design: plainIdx, plain:true }
+        : { kind:"floor",     design: plainIdx, plain:true }
+    ];
+  }
+  // 40..99
+  const rel = level - 40;             // 0..59
+  const isWall = (rel % 2 === 0);
+  const texIdx = Math.floor(rel/2);   // 0..29
+  return [
+    { kind:"furniture", design: level-1 }, // 39..98
+    isWall
+      ? { kind:"wallpaper", design: 5+texIdx, plain:false }
+      : { kind:"floor",     design: 5+texIdx, plain:false }
+  ];
+}
+
 function useXP() {
   const [xp,setXp] = useState(()=>load("pd_xp",{level:1, xp:0, totalGained:0}));
-  const [inv,setInv] = useState(()=>load("pd_inventory",[])); // list of {id, level}
-  const [room,setRoom] = useState(()=>load("pd_room",[])); // list of {id, x, y}
-  const [flash,setFlash] = useState(null);
+  const [inv,setInv] = useState(()=>load("pd_inventory",[]));   // [{id, level, kind, design, plain?}]
+  const [room,setRoom] = useState(()=>load("pd_room",[]));      // [{id, level, kind, design, x, y}] only furniture/golden
+  const [activeWall,setActiveWall] = useState(()=>load("pd_wall",null));   // {level, design, plain}
+  const [activeFloor,setActiveFloor] = useState(()=>load("pd_floor",null));
+  const [flash,setFlash] = useState(null); // {level, milestone?}
   useEffect(()=>save("pd_xp",xp),[xp]);
   useEffect(()=>save("pd_inventory",inv),[inv]);
   useEffect(()=>save("pd_room",room),[room]);
- 
+  useEffect(()=>save("pd_wall",activeWall),[activeWall]);
+  useEffect(()=>save("pd_floor",activeFloor),[activeFloor]);
+
   function addXP(amount){
     setXp(prev=>{
       if(prev.level>=MAX_LEVEL && prev.xp>=XP_PER_LEVEL) return prev;
@@ -87,139 +144,130 @@ function useXP() {
       }
       if(newLevel>=MAX_LEVEL){ newXp = Math.min(newXp, XP_PER_LEVEL); }
       if(unlocked.length){
-        setInv(curr=>[...curr, ...unlocked.map(l=>({id:`furn_${l}_${Date.now()}_${l}`, level:l}))]);
-        setFlash(unlocked[unlocked.length-1]);
-        setTimeout(()=>setFlash(null), 2200);
+        const newItems = [];
+        for(const lvl of unlocked){
+          for(const r of rewardsForLevel(lvl)){
+            newItems.push({ id:`item_${lvl}_${r.kind}_${r.design}_${Math.random().toString(36).slice(2,8)}`, level:lvl, ...r });
+          }
+        }
+        if(newItems.length) setInv(curr=>[...curr, ...newItems]);
+        let milestone = null;
+        if(unlocked.includes(100)) milestone = "lv100";
+        else if(unlocked.includes(30)) milestone = "lv30";
+        else if(unlocked.includes(40)) milestone = "lv40";
+        const lastLvl = unlocked[unlocked.length-1];
+        setFlash({ level:lastLvl, milestone });
+        setTimeout(()=>setFlash(null), milestone==="lv100"?6500:milestone==="lv30"?4200:milestone==="lv40"?3500:2200);
       }
       return { level:newLevel, xp:newXp, totalGained:prev.totalGained+amount };
     });
   }
+
   function removeXP(amount){
     setXp(prev=>{
       let newLevel = prev.level;
       let newXp = prev.xp - amount;
-      const levelsLost = []; // levels we are un-gaining (the level numbers the items were tied to)
+      const levelsLost = [];
       while(newXp < 0 && newLevel > 1){
-        levelsLost.push(newLevel); // current level's reward gets revoked
+        levelsLost.push(newLevel);
         newLevel -= 1;
         newXp += XP_PER_LEVEL;
       }
       if(newXp<0) newXp = 0;
       if(levelsLost.length){
-        // remove items for those levels — prefer inventory first, then room
-        setInv(curr=>{
-          const remaining = [...curr];
-          const stillToRemove = [];
-          for(const lvl of levelsLost){
-            const idx = remaining.map(x=>x.level).lastIndexOf(lvl);
-            if(idx!==-1){ remaining.splice(idx,1); }
-            else { stillToRemove.push(lvl); }
-          }
-          if(stillToRemove.length){
-            setRoom(rc=>{
-              const rem = [...rc];
-              for(const lvl of stillToRemove){
-                const idx = rem.map(x=>x.level).lastIndexOf(lvl);
-                if(idx!==-1) rem.splice(idx,1);
-              }
-              return rem;
-            });
-          }
-          return remaining;
-        });
+        const lostSet = new Set(levelsLost);
+        setInv(curr=>curr.filter(it=>!lostSet.has(it.level)));
+        setRoom(rc=>rc.filter(it=>!lostSet.has(it.level)));
+        setActiveWall(w=> (w && lostSet.has(w.level)) ? null : w);
+        setActiveFloor(f=> (f && lostSet.has(f.level)) ? null : f);
       }
       return { level:newLevel, xp:newXp, totalGained:Math.max(0,prev.totalGained-amount) };
     });
   }
-  return { xp, inv, setInv, room, setRoom, addXP, removeXP, flash };
+
+  return { xp, inv, setInv, room, setRoom, addXP, removeXP, flash, setFlash, activeWall, setActiveWall, activeFloor, setActiveFloor };
 }
- 
-// ============ FURNITURE (100 items, level-gated) ============
-// Each item: name + an SVG renderer. Minimalist cute, same palette as app.
-// We define 20 base archetypes and scale up to 100 by colour variations.
+
+// ============================================================
+// ASSETS — Furniture (29), Walls (35), Floors (35), Gold (5)
+// All small <svg> components that take a `size` prop and render
+// in the same minimalist rounded style.
+// ============================================================
+
+// ----- 29 furniture designs (cute rounded edges) -----
+const FURN_PALETTES = ["purple","teal","coral","amber","green","pink","sky"];
+function furnPalette(idx){ return FURN_PALETTES[idx % FURN_PALETTES.length]; }
 const FURN_NAMES = [
   "Cushion","Plant","Lamp","Bookshelf","Rug","Cat","Clock","Painting","Chair","Table",
-  "Window","Mug","Candle","Plushie","Bed","Mirror","Vase","Stool","Curtain","Mushroom"
+  "Window","Mug","Candle","Plushie","Bed","Mirror","Vase","Stool","Curtain","Mushroom",
+  "Cake","Sushi","Bread","Apple","Picture","Teapot","Star Frame","Fruit Bowl","Tea Set"
 ];
-const FURN_PALETTE = ["purple","teal","coral","amber","green","pink","sky"]; // 7 hues for variety
- 
-function furnitureFor(level){
-  // 100 levels => name index = (level-1) % 20, palette = floor((level-1)/20) cycles through colours
-  const nameIdx = (level-1) % FURN_NAMES.length;
-  const tier = Math.floor((level-1) / FURN_NAMES.length); // 0..4 (5 tiers)
-  const palette = FURN_PALETTE[(nameIdx + tier*3) % FURN_PALETTE.length];
-  const tierLabels = ["","II","III","IV","V"];
-  const name = FURN_NAMES[nameIdx] + (tier>0?` ${tierLabels[tier]}`:"");
-  return { name, palette, archetype: FURN_NAMES[nameIdx], tier };
-}
- 
-function FurnSVG({ level, size=48 }) {
-  const { archetype, palette, tier } = furnitureFor(level);
+
+function FurnSVG({ design, size=48 }) {
+  const idx = design;
+  const palette = furnPalette(idx);
   const c = COLORS[palette];
-  const stroke = c.text;
-  const fill = c.bg;
-  const accent = c.mid;
-  const border = c.border;
-  // Each archetype: a cute minimal SVG inside 64x64
+  const stroke = c.text, fill = c.bg, accent = c.mid, border = c.border;
+  const archetype = FURN_NAMES[idx % FURN_NAMES.length];
   let body;
   switch(archetype){
     case "Cushion": body = <>
-      <rect x="10" y="22" width="44" height="28" rx="10" fill={fill} stroke={stroke} strokeWidth="1.5"/>
-      <circle cx="32" cy="36" r="3" fill={accent}/>
+      <rect x="8" y="22" width="48" height="28" rx="14" fill={fill} stroke={stroke} strokeWidth="1.5"/>
+      <circle cx="32" cy="36" r="3.5" fill={accent}/>
     </>; break;
     case "Plant": body = <>
-      <path d="M32 44 Q22 28 18 18 Q26 22 32 32 Q38 22 46 18 Q42 28 32 44 Z" fill={accent} stroke={stroke} strokeWidth="1.2"/>
-      <path d="M22 44 L42 44 L40 56 L24 56 Z" fill={fill} stroke={stroke} strokeWidth="1.5"/>
+      <path d="M32 44 Q22 28 18 18 Q26 22 32 32 Q38 22 46 18 Q42 28 32 44 Z" fill={accent} stroke={stroke} strokeWidth="1.3"/>
+      <path d="M22 42 Q22 56 32 56 Q42 56 42 42 Z" fill={fill} stroke={stroke} strokeWidth="1.5"/>
     </>; break;
     case "Lamp": body = <>
-      <path d="M20 16 L44 16 L40 32 L24 32 Z" fill={fill} stroke={stroke} strokeWidth="1.5"/>
+      <path d="M20 16 Q32 12 44 16 L40 32 Q32 34 24 32 Z" fill={fill} stroke={stroke} strokeWidth="1.5"/>
       <line x1="32" y1="32" x2="32" y2="50" stroke={stroke} strokeWidth="1.5"/>
-      <ellipse cx="32" cy="52" rx="10" ry="3" fill={accent} stroke={stroke} strokeWidth="1.2"/>
+      <ellipse cx="32" cy="52" rx="11" ry="3" fill={accent} stroke={stroke} strokeWidth="1.2"/>
     </>; break;
     case "Bookshelf": body = <>
-      <rect x="14" y="12" width="36" height="40" rx="3" fill={fill} stroke={stroke} strokeWidth="1.5"/>
-      <line x1="14" y1="26" x2="50" y2="26" stroke={stroke} strokeWidth="1"/>
-      <line x1="14" y1="38" x2="50" y2="38" stroke={stroke} strokeWidth="1"/>
-      <rect x="18" y="16" width="4" height="9" fill={accent}/>
-      <rect x="24" y="14" width="4" height="11" fill={border}/>
-      <rect x="30" y="16" width="4" height="9" fill={accent}/>
+      <rect x="14" y="12" width="36" height="40" rx="6" fill={fill} stroke={stroke} strokeWidth="1.5"/>
+      <line x1="16" y1="26" x2="48" y2="26" stroke={stroke} strokeWidth="1"/>
+      <line x1="16" y1="38" x2="48" y2="38" stroke={stroke} strokeWidth="1"/>
+      <rect x="18" y="16" width="4" height="9" rx="1" fill={accent}/>
+      <rect x="24" y="14" width="4" height="11" rx="1" fill={border}/>
+      <rect x="30" y="16" width="4" height="9" rx="1" fill={accent}/>
     </>; break;
     case "Rug": body = <>
       <ellipse cx="32" cy="36" rx="22" ry="10" fill={fill} stroke={stroke} strokeWidth="1.5"/>
-      <ellipse cx="32" cy="36" rx="14" ry="6" fill="none" stroke={accent} strokeWidth="1.2"/>
+      <ellipse cx="32" cy="36" rx="14" ry="6" fill="none" stroke={accent} strokeWidth="1.4"/>
     </>; break;
     case "Cat": body = <>
       <ellipse cx="32" cy="42" rx="14" ry="12" fill={fill} stroke={stroke} strokeWidth="1.5"/>
-      <path d="M20 32 L24 22 L28 30 Z" fill={fill} stroke={stroke} strokeWidth="1.5"/>
-      <path d="M36 30 L40 22 L44 32 Z" fill={fill} stroke={stroke} strokeWidth="1.5"/>
+      <path d="M20 32 Q22 22 26 30 Z" fill={fill} stroke={stroke} strokeWidth="1.5"/>
+      <path d="M38 30 Q42 22 44 32 Z" fill={fill} stroke={stroke} strokeWidth="1.5"/>
       <circle cx="27" cy="40" r="1.5" fill={stroke}/>
       <circle cx="37" cy="40" r="1.5" fill={stroke}/>
       <path d="M30 44 Q32 46 34 44" stroke={stroke} strokeWidth="1.2" fill="none"/>
     </>; break;
     case "Clock": body = <>
       <circle cx="32" cy="32" r="18" fill={fill} stroke={stroke} strokeWidth="1.5"/>
-      <line x1="32" y1="32" x2="32" y2="20" stroke={stroke} strokeWidth="1.5"/>
-      <line x1="32" y1="32" x2="40" y2="34" stroke={accent} strokeWidth="1.5"/>
+      <line x1="32" y1="32" x2="32" y2="20" stroke={stroke} strokeWidth="1.5" strokeLinecap="round"/>
+      <line x1="32" y1="32" x2="40" y2="34" stroke={accent} strokeWidth="1.5" strokeLinecap="round"/>
       <circle cx="32" cy="32" r="1.5" fill={stroke}/>
     </>; break;
     case "Painting": body = <>
-      <rect x="14" y="14" width="36" height="28" rx="2" fill={fill} stroke={stroke} strokeWidth="1.5"/>
-      <circle cx="40" cy="22" r="3" fill={accent}/>
-      <path d="M16 38 L24 28 L32 34 L40 26 L48 38 Z" fill={border}/>
+      <rect x="12" y="14" width="40" height="30" rx="3" fill={fill} stroke={stroke} strokeWidth="1.5"/>
+      <circle cx="42" cy="22" r="3" fill={accent}/>
+      <path d="M14 40 L22 30 L30 34 L38 26 L50 40 Z" fill={border}/>
     </>; break;
     case "Chair": body = <>
-      <rect x="18" y="12" width="24" height="28" rx="4" fill={fill} stroke={stroke} strokeWidth="1.5"/>
-      <rect x="18" y="36" width="24" height="6" rx="2" fill={accent} stroke={stroke} strokeWidth="1.2"/>
-      <line x1="22" y1="42" x2="22" y2="54" stroke={stroke} strokeWidth="1.5"/>
-      <line x1="38" y1="42" x2="38" y2="54" stroke={stroke} strokeWidth="1.5"/>
+      <rect x="18" y="12" width="24" height="28" rx="8" fill={fill} stroke={stroke} strokeWidth="1.5"/>
+      <rect x="18" y="36" width="24" height="6" rx="3" fill={accent} stroke={stroke} strokeWidth="1.2"/>
+      <line x1="22" y1="42" x2="22" y2="54" stroke={stroke} strokeWidth="1.5" strokeLinecap="round"/>
+      <line x1="38" y1="42" x2="38" y2="54" stroke={stroke} strokeWidth="1.5" strokeLinecap="round"/>
     </>; break;
     case "Table": body = <>
       <ellipse cx="32" cy="26" rx="22" ry="6" fill={fill} stroke={stroke} strokeWidth="1.5"/>
-      <line x1="16" y1="28" x2="18" y2="52" stroke={stroke} strokeWidth="1.5"/>
-      <line x1="48" y1="28" x2="46" y2="52" stroke={stroke} strokeWidth="1.5"/>
+      <line x1="16" y1="28" x2="18" y2="52" stroke={stroke} strokeWidth="1.5" strokeLinecap="round"/>
+      <line x1="48" y1="28" x2="46" y2="52" stroke={stroke} strokeWidth="1.5" strokeLinecap="round"/>
     </>; break;
     case "Window": body = <>
-      <rect x="14" y="12" width="36" height="40" rx="3" fill={fill} stroke={stroke} strokeWidth="1.5"/>
+      <rect x="14" y="12" width="36" height="40" rx="6" fill={fill} stroke={stroke} strokeWidth="1.5"/>
       <line x1="32" y1="12" x2="32" y2="52" stroke={stroke} strokeWidth="1.2"/>
       <line x1="14" y1="32" x2="50" y2="32" stroke={stroke} strokeWidth="1.2"/>
       <circle cx="44" cy="20" r="3" fill={accent}/>
@@ -230,7 +278,7 @@ function FurnSVG({ level, size=48 }) {
       <ellipse cx="31" cy="26" rx="9" ry="3" fill={accent}/>
     </>; break;
     case "Candle": body = <>
-      <rect x="24" y="26" width="16" height="22" rx="2" fill={fill} stroke={stroke} strokeWidth="1.5"/>
+      <rect x="24" y="26" width="16" height="22" rx="4" fill={fill} stroke={stroke} strokeWidth="1.5"/>
       <path d="M32 26 Q28 20 32 14 Q36 20 32 26" fill={accent} stroke={stroke} strokeWidth="1.2"/>
       <ellipse cx="32" cy="48" rx="10" ry="2" fill={border}/>
     </>; break;
@@ -243,8 +291,8 @@ function FurnSVG({ level, size=48 }) {
       <circle cx="32" cy="40" r="2" fill={accent}/>
     </>; break;
     case "Bed": body = <>
-      <rect x="10" y="30" width="44" height="18" rx="3" fill={fill} stroke={stroke} strokeWidth="1.5"/>
-      <rect x="14" y="20" width="14" height="14" rx="3" fill={accent} stroke={stroke} strokeWidth="1.2"/>
+      <rect x="10" y="30" width="44" height="18" rx="6" fill={fill} stroke={stroke} strokeWidth="1.5"/>
+      <rect x="14" y="20" width="14" height="14" rx="5" fill={accent} stroke={stroke} strokeWidth="1.2"/>
       <line x1="10" y1="38" x2="54" y2="38" stroke={border} strokeWidth="1"/>
     </>; break;
     case "Mirror": body = <>
@@ -253,14 +301,14 @@ function FurnSVG({ level, size=48 }) {
       <ellipse cx="28" cy="24" rx="3" ry="5" fill="#fff" opacity="0.6"/>
     </>; break;
     case "Vase": body = <>
-      <path d="M22 18 L26 18 L24 28 Q18 32 18 42 Q18 52 32 52 Q46 52 46 42 Q46 32 40 28 L38 18 L42 18" fill={fill} stroke={stroke} strokeWidth="1.5"/>
+      <path d="M22 18 L26 18 L24 28 Q18 32 18 42 Q18 52 32 52 Q46 52 46 42 Q46 32 40 28 L38 18 L42 18" fill={fill} stroke={stroke} strokeWidth="1.5" strokeLinejoin="round"/>
       <circle cx="32" cy="40" r="4" fill={accent}/>
     </>; break;
     case "Stool": body = <>
       <ellipse cx="32" cy="28" rx="14" ry="4" fill={accent} stroke={stroke} strokeWidth="1.2"/>
-      <rect x="20" y="28" width="24" height="4" fill={fill} stroke={stroke} strokeWidth="1"/>
-      <line x1="22" y1="32" x2="20" y2="50" stroke={stroke} strokeWidth="1.5"/>
-      <line x1="42" y1="32" x2="44" y2="50" stroke={stroke} strokeWidth="1.5"/>
+      <rect x="20" y="28" width="24" height="4" rx="2" fill={fill} stroke={stroke} strokeWidth="1"/>
+      <line x1="22" y1="32" x2="20" y2="50" stroke={stroke} strokeWidth="1.5" strokeLinecap="round"/>
+      <line x1="42" y1="32" x2="44" y2="50" stroke={stroke} strokeWidth="1.5" strokeLinecap="round"/>
     </>; break;
     case "Curtain": body = <>
       <rect x="14" y="14" width="36" height="4" rx="2" fill={stroke}/>
@@ -272,33 +320,435 @@ function FurnSVG({ level, size=48 }) {
       <circle cx="22" cy="26" r="2.5" fill={fill}/>
       <circle cx="32" cy="22" r="2" fill={fill}/>
       <circle cx="42" cy="26" r="2.5" fill={fill}/>
-      <rect x="26" y="32" width="12" height="18" rx="2" fill={fill} stroke={stroke} strokeWidth="1.2"/>
+      <rect x="26" y="32" width="12" height="18" rx="4" fill={fill} stroke={stroke} strokeWidth="1.2"/>
+    </>; break;
+    case "Cake": body = <>
+      <rect x="14" y="30" width="36" height="18" rx="4" fill={fill} stroke={stroke} strokeWidth="1.5"/>
+      <path d="M14 36 Q22 32 32 36 Q42 40 50 36 L50 30 L14 30 Z" fill={accent} stroke={stroke} strokeWidth="1.2"/>
+      <rect x="30" y="18" width="4" height="12" rx="1" fill={border}/>
+      <path d="M32 14 Q30 16 32 18 Q34 16 32 14" fill={COLORS.coral.mid}/>
+      <circle cx="22" cy="34" r="1.5" fill={COLORS.pink.mid}/>
+      <circle cx="42" cy="34" r="1.5" fill={COLORS.pink.mid}/>
+    </>; break;
+    case "Sushi": body = <>
+      <ellipse cx="32" cy="36" rx="18" ry="10" fill={fill} stroke={stroke} strokeWidth="1.5"/>
+      <ellipse cx="32" cy="32" rx="14" ry="6" fill={accent} stroke={stroke} strokeWidth="1.2"/>
+      <ellipse cx="32" cy="30" rx="8" ry="3" fill={COLORS.coral.mid}/>
+    </>; break;
+    case "Bread": body = <>
+      <path d="M16 28 Q16 18 32 18 Q48 18 48 28 L48 44 Q48 50 42 50 L22 50 Q16 50 16 44 Z" fill={fill} stroke={stroke} strokeWidth="1.5"/>
+      <path d="M20 26 Q24 22 28 26 M30 26 Q34 22 38 26 M40 26 Q44 22 48 26" stroke={accent} strokeWidth="1.2" fill="none"/>
+    </>; break;
+    case "Apple": body = <>
+      <path d="M32 22 Q22 22 20 32 Q18 46 32 50 Q46 46 44 32 Q42 22 32 22" fill={accent} stroke={stroke} strokeWidth="1.5"/>
+      <path d="M32 22 Q32 16 36 14" stroke={COLORS.green.mid} strokeWidth="2" fill="none" strokeLinecap="round"/>
+      <ellipse cx="28" cy="28" rx="3" ry="2" fill="#fff" opacity="0.5"/>
+    </>; break;
+    case "Picture": body = <>
+      <rect x="12" y="14" width="40" height="36" rx="4" fill={fill} stroke={stroke} strokeWidth="1.5"/>
+      <circle cx="22" cy="26" r="3" fill={COLORS.amber.mid}/>
+      <path d="M14 44 L22 36 L30 40 L40 30 L50 44 Z" fill={accent}/>
+      <rect x="12" y="14" width="40" height="36" rx="4" fill="none" stroke={border} strokeWidth="2.5"/>
+    </>; break;
+    case "Teapot": body = <>
+      <path d="M18 30 Q14 30 14 36 Q14 46 22 50 L42 50 Q50 46 50 36 Q50 30 46 30 Z" fill={fill} stroke={stroke} strokeWidth="1.5"/>
+      <path d="M14 36 Q10 36 10 40 Q10 44 14 44" fill="none" stroke={stroke} strokeWidth="1.5"/>
+      <rect x="28" y="24" width="8" height="6" rx="2" fill={accent}/>
+      <circle cx="32" cy="20" r="2.5" fill={border}/>
+    </>; break;
+    case "Star Frame": body = <>
+      <path d="M32 14 L36 26 L48 26 L38 34 L42 46 L32 38 L22 46 L26 34 L16 26 L28 26 Z" fill={accent} stroke={stroke} strokeWidth="1.5" strokeLinejoin="round"/>
+      <circle cx="32" cy="32" r="4" fill={fill}/>
+    </>; break;
+    case "Fruit Bowl": body = <>
+      <ellipse cx="32" cy="40" rx="20" ry="8" fill={fill} stroke={stroke} strokeWidth="1.5"/>
+      <path d="M12 40 Q14 50 32 52 Q50 50 52 40" fill={border} stroke={stroke} strokeWidth="1.5"/>
+      <circle cx="26" cy="34" r="5" fill={COLORS.coral.mid}/>
+      <circle cx="36" cy="32" r="5" fill={COLORS.amber.mid}/>
+      <circle cx="40" cy="38" r="4" fill={COLORS.green.mid}/>
+    </>; break;
+    case "Tea Set": body = <>
+      <ellipse cx="22" cy="40" rx="10" ry="3" fill={border}/>
+      <path d="M14 36 Q14 30 22 30 Q30 30 30 36 L28 40 L16 40 Z" fill={fill} stroke={stroke} strokeWidth="1.5"/>
+      <path d="M30 34 Q34 34 34 38" stroke={stroke} strokeWidth="1.5" fill="none"/>
+      <ellipse cx="44" cy="42" rx="8" ry="3" fill={border}/>
+      <path d="M38 38 Q38 34 44 34 Q50 34 50 38 L48 42 L40 42 Z" fill={accent} stroke={stroke} strokeWidth="1.5"/>
     </>; break;
     default: body = <circle cx="32" cy="32" r="14" fill={fill} stroke={stroke}/>;
   }
-  return <svg width={size} height={size} viewBox="0 0 64 64" style={{display:"block"}}>{body}</svg>;
+  return <svg width={size} height={size} viewBox="0 0 64 64" style={{display:"block",overflow:"visible"}}>{body}</svg>;
 }
- 
-// ============ ANTI-SPAM TRACKING ============
-// For one-shot daily actions (habit checks, todo completion, water goal reached):
-// Once XP awarded for an action key, awarding again is a no-op until unlock condition resets.
-// Uncheck/un-complete -> remove XP and remove the award key so re-check still won't double-award.
-// This is enforced by maintaining a Set of award keys in localStorage.
- 
+
+// ----- 5 plain walls + 30 textured walls -----
+const PLAIN_WALL_COLORS = ["#F3E6E0","#E8E1F0","#E6EEF1","#EFEBDE","#E9E6E3"];
+const PLAIN_FLOOR_COLORS = ["#D9C3AB","#C9B9A3","#B89F82","#A89279","#8C7A66"];
+
+// Textured wall designs (30): an SVG <pattern> id that fills a rect.
+// We define each by a small repeating motif and base+accent colors.
+const TEX_WALL_THEMES = [
+  // animals
+  {name:"Bunnies",  base:"#FBE7EE", accent:"#D54B82", motif:"bunny"},
+  {name:"Cats",     base:"#EEEDFE", accent:"#7F77DD", motif:"cat"},
+  {name:"Bears",    base:"#FAEEDA", accent:"#BA7517", motif:"bear"},
+  {name:"Foxes",    base:"#FAECE7", accent:"#D85A30", motif:"fox"},
+  {name:"Ducks",    base:"#EAF3DE", accent:"#639922", motif:"duck"},
+  {name:"Pandas",   base:"#F3F3F3", accent:"#222",    motif:"panda"},
+  {name:"Hedgehogs",base:"#FAEEDA", accent:"#633806", motif:"hedge"},
+  {name:"Whales",   base:"#E2EFFB", accent:"#3C82C7", motif:"whale"},
+  {name:"Frogs",    base:"#EAF3DE", accent:"#27500A", motif:"frog"},
+  {name:"Sheep",    base:"#F7F4EE", accent:"#888780", motif:"sheep"},
+  // nature
+  {name:"Leaves",   base:"#E1F5EE", accent:"#1D9E75", motif:"leaf"},
+  {name:"Flowers",  base:"#FBE7EE", accent:"#D54B82", motif:"flower"},
+  {name:"Stars",    base:"#EEEDFE", accent:"#AFA9EC", motif:"star"},
+  {name:"Clouds",   base:"#E2EFFB", accent:"#8AB8E8", motif:"cloud"},
+  {name:"Hearts",   base:"#FAECE7", accent:"#D85A30", motif:"heart"},
+  {name:"Moons",    base:"#EFEBDE", accent:"#BA7517", motif:"moon"},
+  {name:"Suns",     base:"#FAEEDA", accent:"#EF9F27", motif:"sun"},
+  {name:"Berries",  base:"#FAECE7", accent:"#7A1F44", motif:"berry"},
+  {name:"Mushrooms",base:"#EAF3DE", accent:"#D85A30", motif:"mush"},
+  {name:"Acorns",   base:"#EFEBDE", accent:"#633806", motif:"acorn"},
+  // patterns
+  {name:"Dots",     base:"#EEEDFE", accent:"#7F77DD", motif:"dot"},
+  {name:"Stripes",  base:"#FBE7EE", accent:"#D54B82", motif:"stripe"},
+  {name:"Checks",   base:"#E1F5EE", accent:"#1D9E75", motif:"check"},
+  {name:"Diamonds", base:"#FAEEDA", accent:"#BA7517", motif:"diamond"},
+  {name:"Waves",    base:"#E2EFFB", accent:"#3C82C7", motif:"wave"},
+  {name:"Triangles",base:"#EAF3DE", accent:"#639922", motif:"tri"},
+  {name:"Crosses",  base:"#FAECE7", accent:"#D85A30", motif:"cross"},
+  {name:"Drops",    base:"#E2EFFB", accent:"#3C82C7", motif:"drop"},
+  // sweets
+  {name:"Donuts",   base:"#FBE7EE", accent:"#D54B82", motif:"donut"},
+  {name:"Lollipops",base:"#EEEDFE", accent:"#7F77DD", motif:"lolli"}
+];
+
+// Textured floor designs (30): wood + tile patterns
+const TEX_FLOOR_THEMES = [
+  {name:"Light oak",     base:"#E6D2B6", accent:"#C7AC85", motif:"plank"},
+  {name:"Pine planks",   base:"#EBD8B8", accent:"#C9AB7A", motif:"plank"},
+  {name:"Walnut",        base:"#7A5638", accent:"#5C3F25", motif:"plank"},
+  {name:"Dark oak",      base:"#5A3E25", accent:"#3D2A18", motif:"plank"},
+  {name:"Cherry",        base:"#9B5D4A", accent:"#7A4435", motif:"plank"},
+  {name:"Birch",         base:"#EFE2C8", accent:"#D6BF99", motif:"plank"},
+  {name:"Maple",         base:"#D9B987", accent:"#B6925E", motif:"plank"},
+  {name:"Ash",           base:"#CFC2A8", accent:"#9F9176", motif:"plank"},
+  {name:"Teak",          base:"#A37348", accent:"#7D552F", motif:"plank"},
+  {name:"Mahogany",      base:"#5B2E1F", accent:"#3D1D12", motif:"plank"},
+  {name:"Whitewash",     base:"#F1ECE0", accent:"#D6CDB8", motif:"plank"},
+  {name:"Driftwood",     base:"#BCB0A0", accent:"#928777", motif:"plank"},
+  {name:"Bamboo",        base:"#D8C68A", accent:"#A99A60", motif:"plank"},
+  {name:"Charred wood",  base:"#3C2A1F", accent:"#23150B", motif:"plank"},
+  {name:"Herringbone",   base:"#C9A576", accent:"#9B7B53", motif:"herring"},
+  {name:"Chevron",       base:"#D7B689", accent:"#A88962", motif:"chevron"},
+  {name:"Parquet",       base:"#B98655", accent:"#8B6238", motif:"parquet"},
+  {name:"Marble white",  base:"#EDEAE2", accent:"#C9C2B4", motif:"marble"},
+  {name:"Marble pink",   base:"#F3E0E3", accent:"#D8BDC2", motif:"marble"},
+  {name:"Marble black",  base:"#2E2A28", accent:"#544D49", motif:"marble"},
+  {name:"Stone tiles",   base:"#D7D0C2", accent:"#B0A693", motif:"tile"},
+  {name:"Hex tiles",     base:"#EAE2D2", accent:"#C9BFA8", motif:"hex"},
+  {name:"Mosaic",        base:"#E8DCC5", accent:"#A56F45", motif:"mosaic"},
+  {name:"Terracotta",    base:"#C77D52", accent:"#9B5D38", motif:"tile"},
+  {name:"Slate",         base:"#4D5258", accent:"#34383D", motif:"tile"},
+  {name:"Carpet pink",   base:"#F1D8DF", accent:"#D9A9B7", motif:"carpet"},
+  {name:"Carpet green",  base:"#CFD9BD", accent:"#9FAE85", motif:"carpet"},
+  {name:"Carpet blue",   base:"#C7D8E3", accent:"#94B0C4", motif:"carpet"},
+  {name:"Star tiles",    base:"#EBE2D2", accent:"#C9A98A", motif:"startile"},
+  {name:"Cloud carpet",  base:"#E8EEF6", accent:"#B9C9DB", motif:"carpet"},
+];
+
+// ----- 5 golden items -----
+const GOLD_NAMES = ["Gold Throne","Gold Chalice","Gold Harp","Sun Mirror","Gold Pedestal"];
+function GoldSVG({ design, size=48 }){
+  const gold = "#E9C46A", deep = "#B8860B", light = "#FFF1C2", stroke = "#7C5C12";
+  let body;
+  switch(design){
+    case 0: // throne
+      body = <>
+        <rect x="14" y="22" width="36" height="22" rx="6" fill={gold} stroke={stroke} strokeWidth="1.5"/>
+        <rect x="14" y="10" width="36" height="14" rx="6" fill={deep} stroke={stroke} strokeWidth="1.5"/>
+        <path d="M22 10 L22 4 M32 10 L32 0 M42 10 L42 4" stroke={stroke} strokeWidth="1.5" strokeLinecap="round"/>
+        <circle cx="22" cy="4" r="2" fill={light}/>
+        <circle cx="32" cy="0" r="2.5" fill={light}/>
+        <circle cx="42" cy="4" r="2" fill={light}/>
+        <line x1="18" y1="44" x2="18" y2="56" stroke={stroke} strokeWidth="2" strokeLinecap="round"/>
+        <line x1="46" y1="44" x2="46" y2="56" stroke={stroke} strokeWidth="2" strokeLinecap="round"/>
+      </>; break;
+    case 1: // chalice
+      body = <>
+        <path d="M20 14 Q20 30 32 32 Q44 30 44 14 Z" fill={gold} stroke={stroke} strokeWidth="1.5"/>
+        <line x1="32" y1="32" x2="32" y2="46" stroke={stroke} strokeWidth="2"/>
+        <ellipse cx="32" cy="50" rx="12" ry="3" fill={deep} stroke={stroke} strokeWidth="1.5"/>
+        <ellipse cx="32" cy="20" rx="6" ry="2" fill={light}/>
+      </>; break;
+    case 2: // harp
+      body = <>
+        <path d="M20 12 Q44 14 44 48" stroke={stroke} strokeWidth="3" fill="none"/>
+        <line x1="20" y1="12" x2="20" y2="50" stroke={stroke} strokeWidth="3"/>
+        <line x1="24" y1="14" x2="26" y2="48" stroke={gold} strokeWidth="1.2"/>
+        <line x1="28" y1="14" x2="30" y2="48" stroke={gold} strokeWidth="1.2"/>
+        <line x1="32" y1="16" x2="34" y2="48" stroke={gold} strokeWidth="1.2"/>
+        <line x1="36" y1="20" x2="38" y2="48" stroke={gold} strokeWidth="1.2"/>
+        <line x1="40" y1="26" x2="41" y2="48" stroke={gold} strokeWidth="1.2"/>
+        <circle cx="20" cy="12" r="3" fill={gold}/>
+        <circle cx="44" cy="48" r="3" fill={gold}/>
+      </>; break;
+    case 3: // sun mirror
+      body = <>
+        <circle cx="32" cy="32" r="14" fill={light} stroke={stroke} strokeWidth="1.5"/>
+        {Array.from({length:12}).map((_,i)=>{ const a=i*Math.PI/6; const x1=32+Math.cos(a)*16,y1=32+Math.sin(a)*16,x2=32+Math.cos(a)*22,y2=32+Math.sin(a)*22; return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} stroke={gold} strokeWidth="2.5" strokeLinecap="round"/>; })}
+        <circle cx="32" cy="32" r="10" fill={gold} opacity="0.5"/>
+      </>; break;
+    case 4: // pedestal
+      body = <>
+        <ellipse cx="32" cy="18" rx="14" ry="4" fill={light} stroke={stroke} strokeWidth="1.2"/>
+        <path d="M22 18 L24 50 L40 50 L42 18 Z" fill={gold} stroke={stroke} strokeWidth="1.5"/>
+        <ellipse cx="32" cy="50" rx="12" ry="4" fill={deep} stroke={stroke} strokeWidth="1.5"/>
+        <line x1="26" y1="22" x2="28" y2="48" stroke={deep} strokeWidth="1"/>
+        <line x1="38" y1="22" x2="36" y2="48" stroke={deep} strokeWidth="1"/>
+      </>; break;
+    default: body = <circle cx="32" cy="32" r="14" fill={gold} stroke={stroke}/>;
+  }
+  return <svg width={size} height={size} viewBox="0 0 64 64" style={{display:"block",overflow:"visible",animation:"goldShine 2s ease-in-out infinite"}}>{body}</svg>;
+}
+
+// ----- Tiny motif for wall patterns (24x24 tile) -----
+function MotifTile({ motif, base, accent }){
+  // Returns the inner SVG for a 24x24 pattern tile. Used inside <defs><pattern>.
+  switch(motif){
+    case "bunny": return <g>
+      <ellipse cx="12" cy="16" rx="5" ry="4" fill={accent}/>
+      <path d="M9 12 Q9 6 11 12 M15 12 Q15 6 13 12" stroke={accent} strokeWidth="1.5" fill="none"/>
+      <circle cx="10.5" cy="15" r="0.6" fill={base}/><circle cx="13.5" cy="15" r="0.6" fill={base}/>
+    </g>;
+    case "cat": return <g>
+      <circle cx="12" cy="14" r="4" fill={accent}/>
+      <path d="M9 11 L9 8 L11 11 M15 11 L15 8 L13 11" fill={accent}/>
+      <circle cx="10.5" cy="13.5" r="0.5" fill={base}/><circle cx="13.5" cy="13.5" r="0.5" fill={base}/>
+    </g>;
+    case "bear": return <g>
+      <circle cx="12" cy="13" r="4" fill={accent}/>
+      <circle cx="9" cy="10" r="1.5" fill={accent}/><circle cx="15" cy="10" r="1.5" fill={accent}/>
+      <circle cx="10.5" cy="12" r="0.5" fill={base}/><circle cx="13.5" cy="12" r="0.5" fill={base}/>
+    </g>;
+    case "fox": return <g>
+      <path d="M12 10 L8 16 L12 14 L16 16 Z" fill={accent}/>
+      <circle cx="10.5" cy="13" r="0.5" fill={base}/><circle cx="13.5" cy="13" r="0.5" fill={base}/>
+    </g>;
+    case "duck": return <g>
+      <circle cx="11" cy="13" r="3" fill={accent}/>
+      <ellipse cx="13" cy="14" rx="4" ry="2.5" fill={accent}/>
+      <circle cx="10" cy="12" r="0.5" fill={base}/>
+    </g>;
+    case "panda": return <g>
+      <circle cx="12" cy="13" r="4" fill={base}/><circle cx="12" cy="13" r="4" fill="none" stroke={accent} strokeWidth="0.5"/>
+      <circle cx="9.5" cy="10.5" r="1.3" fill={accent}/><circle cx="14.5" cy="10.5" r="1.3" fill={accent}/>
+      <circle cx="10.5" cy="13" r="0.6" fill={accent}/><circle cx="13.5" cy="13" r="0.6" fill={accent}/>
+    </g>;
+    case "hedge": return <g>
+      <ellipse cx="12" cy="14" rx="5" ry="3" fill={accent}/>
+      <path d="M8 13 L7 11 M10 12 L9 10 M12 11.5 L12 9.5 M14 12 L15 10 M16 13 L17 11" stroke={accent} strokeWidth="1"/>
+    </g>;
+    case "whale": return <g>
+      <ellipse cx="12" cy="14" rx="5" ry="2.5" fill={accent}/>
+      <path d="M16 14 L19 12 L19 16 Z" fill={accent}/>
+      <path d="M10 11 Q10 8 11 9" stroke={accent} strokeWidth="0.8" fill="none"/>
+    </g>;
+    case "frog": return <g>
+      <ellipse cx="12" cy="14" rx="4" ry="3" fill={accent}/>
+      <circle cx="10" cy="11" r="1.5" fill={accent}/><circle cx="14" cy="11" r="1.5" fill={accent}/>
+      <circle cx="10" cy="11" r="0.5" fill={base}/><circle cx="14" cy="11" r="0.5" fill={base}/>
+    </g>;
+    case "sheep": return <g>
+      <circle cx="10" cy="13" r="2" fill={base} stroke={accent}/>
+      <circle cx="13" cy="12" r="2" fill={base} stroke={accent}/>
+      <circle cx="12" cy="14.5" r="2" fill={base} stroke={accent}/>
+      <circle cx="14" cy="11" r="1.5" fill={accent}/>
+    </g>;
+    case "leaf": return <g>
+      <path d="M12 8 Q8 12 12 18 Q16 12 12 8 Z" fill={accent}/>
+      <line x1="12" y1="9" x2="12" y2="17" stroke={base} strokeWidth="0.5"/>
+    </g>;
+    case "flower": return <g>
+      <circle cx="12" cy="9" r="1.8" fill={accent}/><circle cx="9" cy="12" r="1.8" fill={accent}/>
+      <circle cx="15" cy="12" r="1.8" fill={accent}/><circle cx="12" cy="15" r="1.8" fill={accent}/>
+      <circle cx="12" cy="12" r="1.3" fill={base}/>
+    </g>;
+    case "star": return <path d="M12 6 L13.5 10.5 L18 10.5 L14.3 13.3 L15.8 18 L12 15 L8.2 18 L9.7 13.3 L6 10.5 L10.5 10.5 Z" fill={accent}/>;
+    case "cloud": return <g>
+      <ellipse cx="10" cy="13" rx="3" ry="2" fill={accent}/>
+      <ellipse cx="14" cy="12" rx="3.5" ry="2.5" fill={accent}/>
+      <ellipse cx="12" cy="14" rx="4" ry="2" fill={accent}/>
+    </g>;
+    case "heart": return <path d="M12 16 L7 11 Q7 8 9.5 8 Q11 8 12 10 Q13 8 14.5 8 Q17 8 17 11 Z" fill={accent}/>;
+    case "moon": return <path d="M14 8 A6 6 0 1 0 14 18 A4 4 0 1 1 14 8" fill={accent}/>;
+    case "sun": return <g>
+      <circle cx="12" cy="12" r="3" fill={accent}/>
+      {Array.from({length:8}).map((_,i)=>{ const a=i*Math.PI/4; const x1=12+Math.cos(a)*4,y1=12+Math.sin(a)*4,x2=12+Math.cos(a)*6,y2=12+Math.sin(a)*6; return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} stroke={accent} strokeWidth="1.2" strokeLinecap="round"/>; })}
+    </g>;
+    case "berry": return <g>
+      <circle cx="10" cy="14" r="2.5" fill={accent}/>
+      <circle cx="13" cy="13" r="2.5" fill={accent}/>
+      <path d="M12 10 Q14 8 16 9" stroke={accent} strokeWidth="0.8" fill="none"/>
+    </g>;
+    case "mush": return <g>
+      <path d="M7 13 Q7 9 12 9 Q17 9 17 13 Z" fill={accent}/>
+      <rect x="10" y="13" width="4" height="5" rx="1" fill={base} stroke={accent} strokeWidth="0.5"/>
+      <circle cx="10" cy="11" r="0.6" fill={base}/><circle cx="14" cy="11" r="0.6" fill={base}/>
+    </g>;
+    case "acorn": return <g>
+      <ellipse cx="12" cy="14" rx="3" ry="3.5" fill={accent}/>
+      <path d="M9 12 Q9 10 15 10 Q15 12 9 12" fill={accent} opacity="0.7"/>
+      <path d="M12 8 L12 10" stroke={accent} strokeWidth="0.8"/>
+    </g>;
+    case "dot": return <><circle cx="6" cy="6" r="1.5" fill={accent}/><circle cx="18" cy="6" r="1.5" fill={accent}/><circle cx="12" cy="12" r="1.5" fill={accent}/><circle cx="6" cy="18" r="1.5" fill={accent}/><circle cx="18" cy="18" r="1.5" fill={accent}/></>;
+    case "stripe": return <><rect x="0" y="6" width="24" height="3" fill={accent}/><rect x="0" y="15" width="24" height="3" fill={accent}/></>;
+    case "check": return <><rect x="0" y="0" width="12" height="12" fill={accent} opacity="0.4"/><rect x="12" y="12" width="12" height="12" fill={accent} opacity="0.4"/></>;
+    case "diamond": return <path d="M12 4 L20 12 L12 20 L4 12 Z" fill="none" stroke={accent} strokeWidth="1.5"/>;
+    case "wave": return <path d="M0 12 Q6 8 12 12 T24 12" stroke={accent} strokeWidth="1.5" fill="none"/>;
+    case "tri": return <><path d="M6 6 L12 14 L0 14 Z" fill={accent}/><path d="M18 6 L24 14 L12 14 Z" fill={accent} opacity="0.6"/></>;
+    case "cross": return <g stroke={accent} strokeWidth="1.5"><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></g>;
+    case "drop": return <path d="M12 6 Q8 14 12 18 Q16 14 12 6" fill={accent}/>;
+    case "donut": return <g><circle cx="12" cy="12" r="5" fill={accent}/><circle cx="12" cy="12" r="2" fill={base}/></g>;
+    case "lolli": return <g><circle cx="12" cy="10" r="3" fill={accent}/><line x1="12" y1="13" x2="12" y2="18" stroke={accent} strokeWidth="1.5"/></g>;
+    default: return null;
+  }
+}
+
+function FloorMotif({ motif, base, accent }){
+  // motif inside 32x32 tile
+  switch(motif){
+    case "plank":
+      return <g>
+        <rect width="32" height="32" fill={base}/>
+        <line x1="0" y1="11" x2="32" y2="11" stroke={accent} strokeWidth="0.6"/>
+        <line x1="0" y1="22" x2="32" y2="22" stroke={accent} strokeWidth="0.6"/>
+        <line x1="14" y1="0" x2="14" y2="11" stroke={accent} strokeWidth="0.4" opacity="0.6"/>
+        <line x1="22" y1="11" x2="22" y2="22" stroke={accent} strokeWidth="0.4" opacity="0.6"/>
+        <line x1="6" y1="22" x2="6" y2="32" stroke={accent} strokeWidth="0.4" opacity="0.6"/>
+      </g>;
+    case "herring":
+      return <g>
+        <rect width="32" height="32" fill={base}/>
+        <path d="M0 16 L8 8 L8 16 Z M8 16 L16 8 L16 16 Z M16 16 L24 8 L24 16 Z M24 16 L32 8 L32 16 Z" fill={accent} opacity="0.6"/>
+        <path d="M0 32 L8 24 L8 32 Z M8 32 L16 24 L16 32 Z M16 32 L24 24 L24 32 Z M24 32 L32 24 L32 32 Z" fill={accent} opacity="0.6"/>
+      </g>;
+    case "chevron":
+      return <g>
+        <rect width="32" height="32" fill={base}/>
+        <path d="M0 8 L16 0 L32 8 L32 12 L16 4 L0 12 Z" fill={accent}/>
+        <path d="M0 24 L16 16 L32 24 L32 28 L16 20 L0 28 Z" fill={accent}/>
+      </g>;
+    case "parquet":
+      return <g>
+        <rect width="32" height="32" fill={base}/>
+        <rect x="0" y="0" width="16" height="6" fill={accent} opacity="0.5"/>
+        <rect x="16" y="0" width="6" height="16" fill={accent} opacity="0.5"/>
+        <rect x="0" y="16" width="6" height="16" fill={accent} opacity="0.5"/>
+        <rect x="16" y="16" width="16" height="6" fill={accent} opacity="0.5"/>
+      </g>;
+    case "marble":
+      return <g>
+        <rect width="32" height="32" fill={base}/>
+        <path d="M0 10 Q12 14 20 8 T32 14" stroke={accent} strokeWidth="0.8" fill="none" opacity="0.6"/>
+        <path d="M2 24 Q14 20 22 26 T32 22" stroke={accent} strokeWidth="0.6" fill="none" opacity="0.5"/>
+      </g>;
+    case "tile":
+      return <g>
+        <rect width="32" height="32" fill={base}/>
+        <line x1="0" y1="16" x2="32" y2="16" stroke={accent} strokeWidth="1"/>
+        <line x1="16" y1="0" x2="16" y2="32" stroke={accent} strokeWidth="1"/>
+      </g>;
+    case "hex":
+      return <g>
+        <rect width="32" height="32" fill={base}/>
+        <path d="M16 4 L24 8 L24 16 L16 20 L8 16 L8 8 Z" fill="none" stroke={accent} strokeWidth="0.8"/>
+      </g>;
+    case "mosaic":
+      return <g>
+        <rect width="32" height="32" fill={base}/>
+        {Array.from({length:16}).map((_,i)=>{ const x=(i%4)*8, y=Math.floor(i/4)*8; return <rect key={i} x={x+1} y={y+1} width="6" height="6" fill={accent} opacity={0.3+((i*7)%5)*0.12}/>; })}
+      </g>;
+    case "carpet":
+      return <g>
+        <rect width="32" height="32" fill={base}/>
+        <line x1="0" y1="4" x2="32" y2="4" stroke={accent} strokeWidth="0.4"/>
+        <line x1="0" y1="12" x2="32" y2="12" stroke={accent} strokeWidth="0.4"/>
+        <line x1="0" y1="20" x2="32" y2="20" stroke={accent} strokeWidth="0.4"/>
+        <line x1="0" y1="28" x2="32" y2="28" stroke={accent} strokeWidth="0.4"/>
+        <line x1="4" y1="0" x2="4" y2="32" stroke={accent} strokeWidth="0.4" opacity="0.6"/>
+        <line x1="20" y1="0" x2="20" y2="32" stroke={accent} strokeWidth="0.4" opacity="0.6"/>
+      </g>;
+    case "startile":
+      return <g>
+        <rect width="32" height="32" fill={base}/>
+        <path d="M16 8 L18 14 L24 14 L19 18 L21 24 L16 20 L11 24 L13 18 L8 14 L14 14 Z" fill={accent} opacity="0.5"/>
+      </g>;
+    default:
+      return <rect width="32" height="32" fill={base}/>;
+  }
+}
+
+// Render a swatch preview of a wall/floor design (small icon, e.g. for inventory).
+function WallSwatch({ design, plain, size=44 }){
+  if(plain){
+    return <div style={{width:size,height:size,borderRadius:10,background:PLAIN_WALL_COLORS[design],border:"1px solid #d3d1c7"}}/>;
+  }
+  const theme = TEX_WALL_THEMES[design-5];
+  if(!theme) return null;
+  const patternId = `wsw_${design}_${Math.random().toString(36).slice(2,7)}`;
+  return <svg width={size} height={size} viewBox="0 0 48 48" style={{display:"block",borderRadius:10,border:"1px solid #d3d1c7"}}>
+    <defs><pattern id={patternId} x="0" y="0" width="24" height="24" patternUnits="userSpaceOnUse">
+      <rect width="24" height="24" fill={theme.base}/>
+      <MotifTile motif={theme.motif} base={theme.base} accent={theme.accent}/>
+    </pattern></defs>
+    <rect width="48" height="48" fill={`url(#${patternId})`}/>
+  </svg>;
+}
+function FloorSwatch({ design, plain, size=44 }){
+  if(plain){
+    return <div style={{width:size,height:size,borderRadius:10,background:PLAIN_FLOOR_COLORS[design],border:"1px solid #d3d1c7"}}/>;
+  }
+  const theme = TEX_FLOOR_THEMES[design-5];
+  if(!theme) return null;
+  const patternId = `fsw_${design}_${Math.random().toString(36).slice(2,7)}`;
+  return <svg width={size} height={size} viewBox="0 0 48 48" style={{display:"block",borderRadius:10,border:"1px solid #d3d1c7"}}>
+    <defs><pattern id={patternId} x="0" y="0" width="32" height="32" patternUnits="userSpaceOnUse">
+      <FloorMotif motif={theme.motif} base={theme.base} accent={theme.accent}/>
+    </pattern></defs>
+    <rect width="48" height="48" fill={`url(#${patternId})`}/>
+  </svg>;
+}
+
+function inventoryItemName(it){
+  if(it.kind==="furniture") return FURN_NAMES[it.design % FURN_NAMES.length];
+  if(it.kind==="golden")    return GOLD_NAMES[it.design];
+  if(it.kind==="wallpaper") return it.plain ? `Plain wall ${it.design+1}` : TEX_WALL_THEMES[it.design-5]?.name;
+  if(it.kind==="floor")     return it.plain ? `Plain floor ${it.design+1}` : TEX_FLOOR_THEMES[it.design-5]?.name;
+  return "Item";
+}
+function InventoryItemPreview({ it, size=44 }){
+  if(it.kind==="furniture") return <FurnSVG design={it.design} size={size}/>;
+  if(it.kind==="golden")    return <GoldSVG design={it.design} size={size}/>;
+  if(it.kind==="wallpaper") return <WallSwatch design={it.design} plain={it.plain} size={size}/>;
+  if(it.kind==="floor")     return <FloorSwatch design={it.design} plain={it.plain} size={size}/>;
+  return null;
+}
+
+// ============================================================
+// AWARDS (anti-spam keys)
+// ============================================================
 function useAwards(){
   const [awards,setAwards] = useState(()=>load("pd_awards",{}));
   useEffect(()=>save("pd_awards",awards),[awards]);
   function has(key){ return !!awards[key]; }
   function add(key){ setAwards(a=>({...a,[key]:Date.now()})); }
   function remove(key){ setAwards(a=>{ const n={...a}; delete n[key]; return n; }); }
-  return { has, add, remove, awards };
+  return { has, add, remove };
 }
- 
-// ============ THEME / SETTINGS ============
-const ThemeCtx = React.createContext(null);
-function useTheme(){ return React.useContext(ThemeCtx); }
- 
-// ============ UI PRIMITIVES ============
+
+// ============================================================
+// UI PRIMITIVES
+// ============================================================
 function Badge({ cat }) {
   const c = COLORS[CAT_COLOR[cat] || "green"];
   return <span style={{ background:c.bg, color:c.text, border:`1px solid ${c.border}`, borderRadius:20, padding:"2px 10px", fontSize:12, fontWeight:500 }}>{cat}</span>;
@@ -310,9 +760,6 @@ function UrgencyBadge({ u }) {
 function Card({ children, style={} }) {
   return <div className="card" style={{ background:"#fff", border:"0.5px solid #d3d1c7", borderRadius:20, padding:"1rem 1.25rem", ...style }}>{children}</div>;
 }
-function Tab({ label, active, onClick }) {
-  return <button onClick={onClick} style={{ padding:"8px 18px", borderRadius:40, border: active?"1.5px solid #b4b2a9":"1.5px solid transparent", background: active?"#fff":"transparent", color: active?"#1a1a18":"#888780", fontWeight: active?500:400, fontSize:14, cursor:"pointer", whiteSpace:"nowrap" }}>{label}</button>;
-}
 function Inp({ placeholder, value, onChange, style={} }) {
   return <input type="text" placeholder={placeholder} value={value} onChange={e=>onChange(e.target.value)} style={style} />;
 }
@@ -323,8 +770,6 @@ function Pill({ children, onClick, active, color="purple" }) {
   const c = COLORS[color];
   return <button onClick={onClick} style={{ borderRadius:40, padding:"4px 14px", fontSize:13, cursor:"pointer", fontWeight: active?500:400, background: active?c.bg:"transparent", color: active?c.text:"#888780", border: active?`1px solid ${c.border}`:"1px solid #d3d1c7" }}>{children}</button>;
 }
- 
-// Shared settings card for per-page theme
 function ThemeSettingsCard({ value, onChange, label="Page colour" }){
   return <Card>
     <div style={{display:"flex",flexDirection:"column",gap:10}}>
@@ -337,7 +782,6 @@ function ThemeSettingsCard({ value, onChange, label="Page colour" }){
     </div>
   </Card>;
 }
- 
 function SettingsButton({ open, onToggle, color }){
   const col = COLORS[color] || COLORS.purple;
   return <button onClick={onToggle} style={{background:open?col.bg:"transparent",border:`1px solid ${open?col.border:"#d3d1c7"}`,borderRadius:20,padding:"4px 14px",fontSize:12,color:open?col.text:"#888780",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:5}}>
@@ -345,49 +789,78 @@ function SettingsButton({ open, onToggle, color }){
     Settings
   </button>;
 }
- 
+
 // ============================================================
-// TODOS
+// TODOS  (with archive, urgency sort)
 // ============================================================
 function Todos({ xpApi, awards }) {
   const [todos,setTodos]=useState(()=>load("pd_todos",[]));
+  const [archive,setArchive]=useState(()=>load("pd_archive",[]));
   const [text,setText]=useState(""); const [due,setDue]=useState(""); const [cat,setCat]=useState("Work"); const [urgency,setUrgency]=useState("Medium");
-  const [filter,setFilter]=useState("All");
+  const [showArchive,setShowArchive]=useState(false);
   const [settings,setSettings]=useState(()=>load("pd_todos_settings",{theme:"purple"}));
   const [settingsOpen,setSettingsOpen]=useState(false);
   useEffect(()=>save("pd_todos",todos),[todos]);
+  useEffect(()=>save("pd_archive",archive),[archive]);
   useEffect(()=>save("pd_todos_settings",settings),[settings]);
-  function add(){ if(!text.trim())return; setTodos(t=>[...t,{id:Date.now(),text:text.trim(),due,cat,urgency,done:false}]); setText(""); setDue(""); setUrgency("Medium"); }
+
+  function add(){
+    if(!text.trim()) return;
+    setTodos(t=>[...t,{id:Date.now(),text:text.trim(),due,cat,urgency,done:false}]);
+    setText(""); setDue(""); setUrgency("Medium");
+  }
+
   function toggle(id){
-    setTodos(t=>t.map(x=>{
-      if(x.id!==id) return x;
-      const newDone = !x.done;
-      const key = `todo_done_${x.id}`;
+    // Toggle DONE on an active todo. Awards XP first time, refunds on untick.
+    setTodos(prev=>{
+      const t = prev.find(x=>x.id===id);
+      if(!t) return prev;
+      const newDone = !t.done;
+      const key = `todo_done_${t.id}`;
       if(newDone){
         if(!awards.has(key)){ xpApi.addXP(XP_PER_ACTION); awards.add(key); }
+        // Move to archive
+        setArchive(a=>[{...t,done:true,doneAt:Date.now()}, ...a]);
+        return prev.filter(x=>x.id!==id);
       } else {
+        // Shouldn't really happen since done items now live in archive,
+        // but keep safe behaviour just in case.
         if(awards.has(key)){ xpApi.removeXP(XP_PER_ACTION); awards.remove(key); }
+        return prev.map(x=>x.id===id?{...x,done:false}:x);
       }
-      return {...x,done:newDone};
-    }));
+    });
   }
-  function remove(id){
-    const t = todos.find(x=>x.id===id);
-    if(t){
+
+  // Un-archive: bring back an archived task to active list. Refunds XP.
+  function unarchive(id){
+    setArchive(prev=>{
+      const t = prev.find(x=>x.id===id);
+      if(!t) return prev;
       const key = `todo_done_${t.id}`;
-      if(t.done && awards.has(key)){ xpApi.removeXP(XP_PER_ACTION); awards.remove(key); }
-    }
-    setTodos(t=>t.filter(x=>x.id!==id));
+      if(awards.has(key)){ xpApi.removeXP(XP_PER_ACTION); awards.remove(key); }
+      setTodos(curr=>[...curr,{...t,done:false}]);
+      return prev.filter(x=>x.id!==id);
+    });
   }
+
+  // Cross off an archived task (delete it). No XP penalty.
+  function crossOffArchived(id){
+    setArchive(prev=>prev.filter(x=>x.id!==id));
+    // Note: we do NOT clear the awards key, so re-adding+completing the same id can't double-award.
+  }
+
+  function removeActive(id){
+    // Deleting an active (unchecked) todo never awarded XP, so nothing to refund.
+    setTodos(prev=>prev.filter(x=>x.id!==id));
+  }
+
   const td=today();
   const sorted = useMemo(()=>{
     const arr = [...todos];
     arr.sort((a,b)=>{
-      if(a.done !== b.done) return a.done?1:-1;
       const ua = URGENCY_RANK[a.urgency||"Medium"];
       const ub = URGENCY_RANK[b.urgency||"Medium"];
       if(ua!==ub) return ua-ub;
-      // within urgency: closer date first; no date last
       if(a.due && b.due) return a.due.localeCompare(b.due);
       if(a.due) return -1;
       if(b.due) return 1;
@@ -395,13 +868,15 @@ function Todos({ xpApi, awards }) {
     });
     return arr;
   },[todos]);
-  const filtered=sorted.filter(t=>filter==="All"?true:filter==="Active"?!t.done:t.done);
-  const overdue=todos.filter(t=>!t.done&&t.due&&t.due<td).length;
+
+  const overdue=todos.filter(t=>t.due&&t.due<td).length;
   const col = COLORS[settings.theme];
+
   return (
     <div style={{display:"flex",flexDirection:"column",gap:16}}>
       <div style={{display:"flex",justifyContent:"flex-end"}}><SettingsButton open={settingsOpen} onToggle={()=>setSettingsOpen(s=>!s)} color={settings.theme}/></div>
       {settingsOpen&&<ThemeSettingsCard value={settings.theme} onChange={v=>setSettings(s=>({...s,theme:v}))} />}
+
       <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
         <Inp placeholder="What needs to be done?" value={text} onChange={setText} style={{flex:1,minWidth:140}} />
         <input type="date" value={due} onChange={e=>setDue(e.target.value)} />
@@ -409,28 +884,50 @@ function Todos({ xpApi, awards }) {
         <Sel value={urgency} onChange={setUrgency} options={URGENCY_OPTIONS} />
         <button onClick={add} style={{borderRadius:14,padding:"8px 20px",background:col.mid,color:"#fff",border:"none",fontWeight:500,fontSize:14,cursor:"pointer"}}>Add</button>
       </div>
+
       <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
-        {["All","Active","Done"].map(f=><Pill key={f} active={filter===f} onClick={()=>setFilter(f)} color={settings.theme}>{f}</Pill>)}
-        {overdue>0&&<span style={{marginLeft:"auto",fontSize:13,color:COLORS.coral.text,background:COLORS.coral.bg,borderRadius:20,padding:"3px 10px",border:`1px solid ${COLORS.coral.border}`}}>{overdue} overdue</span>}
+        <Pill active={!showArchive} onClick={()=>setShowArchive(false)} color={settings.theme}>Active ({todos.length})</Pill>
+        <Pill active={showArchive} onClick={()=>setShowArchive(true)} color={settings.theme}>Archived ({archive.length})</Pill>
+        {!showArchive && overdue>0 && <span style={{marginLeft:"auto",fontSize:13,color:COLORS.coral.text,background:COLORS.coral.bg,borderRadius:20,padding:"3px 10px",border:`1px solid ${COLORS.coral.border}`}}>{overdue} overdue</span>}
       </div>
+
       <div style={{display:"flex",flexDirection:"column",gap:8}}>
-        {filtered.length===0&&<p style={{color:"#888780",fontSize:14,textAlign:"center",padding:"1.5rem 0"}}>Nothing here yet</p>}
-        {filtered.map(t=>{
-          const ov=!t.done&&t.due&&t.due<td;
-          return <Card key={t.id} style={{display:"flex",alignItems:"center",gap:10,padding:"12px 16px",opacity:t.done?.6:1,flexWrap:"wrap"}}>
-            <input type="checkbox" checked={t.done} onChange={()=>toggle(t.id)} style={{width:18,height:18,flexShrink:0,cursor:"pointer",accentColor:col.mid}} />
+        {!showArchive && sorted.length===0 && <p style={{color:"#888780",fontSize:14,textAlign:"center",padding:"1.5rem 0"}}>Nothing here yet</p>}
+        {!showArchive && sorted.map(t=>{
+          const ov=t.due && t.due<td;
+          return <Card key={t.id} style={{display:"flex",alignItems:"center",gap:10,padding:"12px 16px",flexWrap:"wrap"}}>
+            <input type="checkbox" checked={false} onChange={()=>toggle(t.id)} style={{width:18,height:18,flexShrink:0,cursor:"pointer",accentColor:col.mid}} />
             <div style={{flex:1,minWidth:120}}>
-              <span style={{fontSize:15,textDecoration:t.done?"line-through":"none"}}>{t.text}</span>
+              <span style={{fontSize:15}}>{t.text}</span>
               {t.due&&<span style={{marginLeft:8,fontSize:12,color:ov?COLORS.coral.text:"#888780"}}>{t.due}</span>}
             </div>
             <UrgencyBadge u={t.urgency||"Medium"} />
             <Badge cat={t.cat} />
-            <button onClick={()=>remove(t.id)} style={{background:"none",border:"none",cursor:"pointer",color:"#888780",fontSize:18,lineHeight:1,padding:"2px 4px",borderRadius:8}}>×</button>
+            <button onClick={()=>removeActive(t.id)} style={{background:"none",border:"none",cursor:"pointer",color:"#888780",fontSize:18,lineHeight:1,padding:"2px 4px",borderRadius:8}}>×</button>
           </Card>;
         })}
+
+        {showArchive && archive.length===0 && <p style={{color:"#888780",fontSize:14,textAlign:"center",padding:"1.5rem 0"}}>No archived tasks yet</p>}
+        {showArchive && archive.map(t=>(
+          <Card key={t.id} style={{display:"flex",alignItems:"center",gap:10,padding:"12px 16px",opacity:0.75,flexWrap:"wrap"}}>
+            <input type="checkbox" checked={true} onChange={()=>unarchive(t.id)} style={{width:18,height:18,flexShrink:0,cursor:"pointer",accentColor:col.mid}} title="Un-archive (refunds XP)"/>
+            <div style={{flex:1,minWidth:120}}>
+              <span style={{fontSize:15,textDecoration:"line-through"}}>{t.text}</span>
+              {t.due&&<span style={{marginLeft:8,fontSize:12,color:"#888780"}}>{t.due}</span>}
+            </div>
+            <UrgencyBadge u={t.urgency||"Medium"} />
+            <Badge cat={t.cat} />
+            <button onClick={()=>crossOffArchived(t.id)} title="Cross off (no XP penalty)" style={{background:"none",border:"none",cursor:"pointer",color:"#888780",fontSize:18,lineHeight:1,padding:"2px 4px",borderRadius:8}}>×</button>
+          </Card>
+        ))}
       </div>
+
       <div style={{display:"flex",gap:12}}>
-        {[{v:todos.filter(t=>!t.done).length,l:"remaining"},{v:todos.filter(t=>t.done).length,l:"completed"},{v:(todos.length?Math.round(todos.filter(t=>t.done).length/todos.length*100):0)+"%",l:"done"}].map(({v,l})=>
+        {[
+          {v:todos.length,l:"remaining"},
+          {v:archive.length,l:"completed"},
+          {v:(todos.length+archive.length)?Math.round(archive.length/(todos.length+archive.length)*100)+"%":"0%",l:"done"}
+        ].map(({v,l})=>
           <div key={l} className="metric" style={{flex:1,textAlign:"center",background:"#f1efe8",borderRadius:16,padding:"12px 8px"}}>
             <p style={{fontSize:22,fontWeight:500,margin:0}}>{v}</p>
             <p style={{fontSize:12,color:"#888780",margin:0}}>{l}</p>
@@ -439,9 +936,9 @@ function Todos({ xpApi, awards }) {
     </div>
   );
 }
- 
+
 // ============================================================
-// TIME TRACKER (count up OR count down)
+// TIME TRACKER (count up / down, XP per 10 min of total tracked time)
 // ============================================================
 function TimeTracker({ xpApi, awards }) {
   const [entries,setEntries]=useState(()=>load("pd_time",[]));
@@ -449,66 +946,81 @@ function TimeTracker({ xpApi, awards }) {
   const [running,setRunning]=useState(null); const [elapsed,setElapsed]=useState(0);
   const [settings,setSettings]=useState(()=>load("pd_time_settings",{theme:"teal",mode:"up",cdMinutes:25}));
   const [settingsOpen,setSettingsOpen]=useState(false);
-  const ref=useRef(null);
+  const intervalRef=useRef(null);
   const completedRef = useRef(false);
   useEffect(()=>save("pd_time",entries),[entries]);
   useEffect(()=>save("pd_time_settings",settings),[settings]);
- 
+
+  // After entries change, re-evaluate how many 10-min XP awards we should hold.
+  // Award key: time_milestone_<N>  where N = 1..floor(totalSeconds/600).
+  // We add awards for any N <= floor(total/600) that we don't yet have,
+  // and remove awards (refund XP) for any N > floor(total/600) that we do have.
+  useEffect(()=>{
+    const totalSec = entries.reduce((a,e)=>a+e.secs,0);
+    const should = Math.floor(totalSec/600); // each 10 min = 1 award
+    // grant missing
+    for(let i=1;i<=should;i++){
+      const key = `time_milestone_${i}`;
+      if(!awards.has(key)){ awards.add(key); xpApi.addXP(XP_PER_ACTION); }
+    }
+    // refund excess (e.g. after delete)
+    let n = should+1;
+    while(awards.has(`time_milestone_${n}`)){
+      awards.remove(`time_milestone_${n}`);
+      xpApi.removeXP(XP_PER_ACTION);
+      n++;
+    }
+  // eslint-disable-next-line
+  },[entries]);
+
   useEffect(()=>{
     if(running){
-      ref.current=setInterval(()=>{
-        const elapsedSec = Math.floor((Date.now()-running.startMs)/1000);
-        setElapsed(elapsedSec);
-        if(running.mode==="down" && elapsedSec >= running.totalSec && !completedRef.current){
+      intervalRef.current=setInterval(()=>{
+        const sec = Math.floor((Date.now()-running.startMs)/1000);
+        setElapsed(sec);
+        if(running.mode==="down" && sec>=running.totalSec && !completedRef.current){
           completedRef.current = true;
-          // auto-stop & award
           finishSession(running.totalSec);
         }
       },250);
-    } else {
-      clearInterval(ref.current);
-    }
-    return ()=>clearInterval(ref.current);
+    } else { clearInterval(intervalRef.current); }
+    return ()=>clearInterval(intervalRef.current);
+  // eslint-disable-next-line
   },[running]);
- 
+
   function finishSession(secs){
-    if(secs>0){
-      const id = Date.now();
-      setEntries(e=>[...e,{id,activity:running.activity,cat:running.cat,secs,date:today(),mode:running.mode}]);
-      // award XP for each completed session
-      xpApi.addXP(XP_PER_ACTION);
+    if(secs>0 && running){
+      setEntries(e=>[...e,{id:Date.now(),activity:running.activity,cat:running.cat,secs,date:today(),mode:running.mode}]);
     }
-    setRunning(null);
-    setElapsed(0);
-    completedRef.current = false;
+    setRunning(null); setElapsed(0); completedRef.current = false;
   }
- 
+
   function startStop(){
     if(running){
-      const elapsedSec = Math.floor((Date.now()-running.startMs)/1000);
-      const recorded = running.mode==="down" ? Math.min(elapsedSec, running.totalSec) : elapsedSec;
+      const sec = Math.floor((Date.now()-running.startMs)/1000);
+      const recorded = running.mode==="down" ? Math.min(sec, running.totalSec) : sec;
       finishSession(recorded);
     } else {
       if(!activity.trim()) return;
       const totalSec = settings.mode==="down" ? Math.max(60, settings.cdMinutes*60) : 0;
       setRunning({activity:activity.trim(),cat,startMs:Date.now(),mode:settings.mode,totalSec});
-      setElapsed(0);
-      completedRef.current = false;
+      setElapsed(0); completedRef.current=false;
     }
   }
- 
+
   function remove(id){
-    // removing logged session — withdraw the XP awarded for it
-    const e = entries.find(x=>x.id===id);
-    if(e){ xpApi.removeXP(XP_PER_ACTION); }
     setEntries(arr=>arr.filter(x=>x.id!==id));
+    // XP refund handled by useEffect re-evaluating milestones.
   }
+
   const td=today(); const todayE=entries.filter(e=>e.date===td);
   const todayS=todayE.reduce((a,e)=>a+e.secs,0); const totalS=entries.reduce((a,e)=>a+e.secs,0);
   const byCat=CAT_OPTIONS.map(c=>({cat:c,secs:entries.filter(e=>e.cat===c).reduce((a,e)=>a+e.secs,0)})).filter(x=>x.secs>0);
   const col = COLORS[settings.theme];
   const remainingSec = running && running.mode==="down" ? Math.max(0, running.totalSec - elapsed) : elapsed;
   const cdPct = running && running.mode==="down" ? Math.min(100, (elapsed/running.totalSec)*100) : 0;
+  const nextMilestoneSec = 600 - (totalS % 600);
+
   return (
     <div style={{display:"flex",flexDirection:"column",gap:16}}>
       <div style={{display:"flex",justifyContent:"flex-end"}}><SettingsButton open={settingsOpen} onToggle={()=>setSettingsOpen(s=>!s)} color={settings.theme}/></div>
@@ -551,6 +1063,7 @@ function TimeTracker({ xpApi, awards }) {
             <p style={{fontSize:12,color:"#888780",margin:0}}>{l}</p>
           </div>)}
       </div>
+      <p style={{fontSize:12,color:"#888780",textAlign:"center",margin:0}}>+{XP_PER_ACTION} XP every 10 minutes of tracked time · next in {Math.floor(nextMilestoneSec/60)}m {nextMilestoneSec%60}s</p>
       {byCat.length>0&&<Card>
         <p style={{fontSize:13,fontWeight:500,margin:"0 0 10px",color:"#888780"}}>Time by category</p>
         <div style={{display:"flex",flexDirection:"column",gap:8}}>
@@ -575,9 +1088,9 @@ function TimeTracker({ xpApi, awards }) {
     </div>
   );
 }
- 
+
 // ============================================================
-// HABITS
+// HABITS  (7-day streak bonus, 5 XP for daily check)
 // ============================================================
 function Habits({ xpApi, awards }) {
   const [habits,setHabits]=useState(()=>load("pd_habits",[]));
@@ -587,38 +1100,78 @@ function Habits({ xpApi, awards }) {
   const td=today();
   useEffect(()=>save("pd_habits",habits),[habits]);
   useEffect(()=>save("pd_habits_settings",settings),[settings]);
-  function add(){ if(!name.trim())return; setHabits(h=>[...h,{id:Date.now(),name:name.trim(),cat,completions:[]}]); setName(""); }
+
+  function streak(c){ let s=0,d=new Date(); while(true){ const ds=d.toISOString().slice(0,10); if(c.includes(ds)){s++;d.setDate(d.getDate()-1);}else break; } return s; }
+
+  function add(){ if(!name.trim()) return; setHabits(h=>[...h,{id:Date.now(),name:name.trim(),cat,completions:[]}]); setName(""); }
+
   function toggle(id){
-    setHabits(h=>h.map(x=>{
+    setHabits(prev=>prev.map(x=>{
       if(x.id!==id) return x;
       const d=x.completions.includes(td);
-      const key = `habit_${x.id}_${td}`;
+      const dayKey = `habit_${x.id}_${td}`;
+
       if(d){
-        // unchecking
-        if(awards.has(key)){ xpApi.removeXP(XP_PER_ACTION); awards.remove(key); }
-        return {...x,completions:x.completions.filter(c=>c!==td)};
+        // uncheck
+        if(awards.has(dayKey)){ xpApi.removeXP(XP_PER_ACTION); awards.remove(dayKey); }
+        const newCompletions = x.completions.filter(c=>c!==td);
+        // 7-day milestone refund: recompute milestones with new completions
+        reconcileStreakAwards(x.id, newCompletions);
+        return {...x,completions:newCompletions};
       } else {
-        if(!awards.has(key)){ xpApi.addXP(XP_PER_ACTION); awards.add(key); }
-        return {...x,completions:[...x.completions,td]};
+        if(!awards.has(dayKey)){ xpApi.addXP(XP_PER_ACTION); awards.add(dayKey); }
+        const newCompletions = [...x.completions, td];
+        reconcileStreakAwards(x.id, newCompletions);
+        return {...x,completions:newCompletions};
       }
     }));
   }
+
+  // For a habit, count streak milestones earned: every 7 consecutive days = +5 XP.
+  // milestone key = `habit_streak_<id>_<N>` for N=1,2,3...
+  function reconcileStreakAwards(habitId, completions){
+    // Streak length right now is what counts for milestones.
+    // To be robust to date gaps, we award 1 milestone per 7-day run that has been ACHIEVED at any point.
+    // Simpler & per-spec: milestones N = floor(currentStreak / 7).
+    const s = streak(completions);
+    const should = Math.floor(s/7);
+    for(let i=1;i<=should;i++){
+      const key=`habit_streak_${habitId}_${i}`;
+      if(!awards.has(key)){ awards.add(key); xpApi.addXP(XP_PER_ACTION); }
+    }
+    let n = should+1;
+    while(awards.has(`habit_streak_${habitId}_${n}`)){
+      awards.remove(`habit_streak_${habitId}_${n}`);
+      xpApi.removeXP(XP_PER_ACTION);
+      n++;
+    }
+  }
+
   function remove(id){
     const h = habits.find(x=>x.id===id);
     if(h){
-      // remove any awards keyed to this habit (only today's matters, but be safe)
+      // refund today's check if held
+      const todayKey = `habit_${h.id}_${td}`;
+      if(awards.has(todayKey)){ xpApi.removeXP(XP_PER_ACTION); awards.remove(todayKey); }
+      // refund all streak milestones held for this habit
+      let n=1;
+      while(awards.has(`habit_streak_${h.id}_${n}`)){
+        awards.remove(`habit_streak_${h.id}_${n}`);
+        xpApi.removeXP(XP_PER_ACTION);
+        n++;
+      }
+      // remove all other day awards for this habit silently (no refund — XP already came from totals)
       h.completions.forEach(d=>{
-        const key=`habit_${h.id}_${d}`;
-        if(awards.has(key) && d===td){ xpApi.removeXP(XP_PER_ACTION); }
-        awards.remove(key);
+        if(d!==td) awards.remove(`habit_${h.id}_${d}`);
       });
     }
     setHabits(arr=>arr.filter(x=>x.id!==id));
   }
-  function streak(c){ let s=0,d=new Date(); while(true){ const ds=d.toISOString().slice(0,10); if(c.includes(ds)){s++;d.setDate(d.getDate()-1);}else break; } return s; }
+
   const last7=Array.from({length:7},(_,i)=>{ const d=new Date(); d.setDate(d.getDate()-(6-i)); return d.toISOString().slice(0,10); });
   const doneToday=habits.filter(h=>h.completions.includes(td)).length;
   const col = COLORS[settings.theme];
+
   return (
     <div style={{display:"flex",flexDirection:"column",gap:16}}>
       <div style={{display:"flex",justifyContent:"flex-end"}}><SettingsButton open={settingsOpen} onToggle={()=>setSettingsOpen(s=>!s)} color={settings.theme}/></div>
@@ -635,6 +1188,7 @@ function Habits({ xpApi, awards }) {
             <p style={{fontSize:12,color:"#888780",margin:0}}>{l}</p>
           </div>)}
       </div>
+      <p style={{fontSize:12,color:"#888780",textAlign:"center",margin:0}}>+{XP_PER_ACTION} XP per check · bonus +{XP_PER_ACTION} XP every 7-day streak</p>
       {habits.length===0&&<p style={{color:"#888780",fontSize:14,textAlign:"center",padding:"1.5rem 0"}}>Add your first habit above</p>}
       {habits.map(h=>{
         const done=h.completions.includes(td); const s=streak(h.completions); const ccol=COLORS[CAT_COLOR[h.cat]||"green"];
@@ -657,9 +1211,9 @@ function Habits({ xpApi, awards }) {
     </div>
   );
 }
- 
+
 // ============================================================
-// HYDRATION (with anti-spam goal award)
+// HYDRATION
 // ============================================================
 function Hydration({ xpApi, awards }) {
   const [settings,setSettings]=useState(()=>load("pd_hydration",{portion:250,goal:2000,theme:"teal"}));
@@ -672,19 +1226,14 @@ function Hydration({ xpApi, awards }) {
   const todayMl=todayE.reduce((a,e)=>a+e.ml,0);
   const pct=Math.min(100,Math.round(todayMl/settings.goal*100));
   const col=COLORS[settings.theme]||COLORS.teal;
- 
-  // award when goal reached today, refund if drops below
+
   useEffect(()=>{
     const key = `water_goal_${td}`;
-    if(todayMl >= settings.goal && !awards.has(key)){
-      xpApi.addXP(XP_PER_ACTION);
-      awards.add(key);
-    } else if(todayMl < settings.goal && awards.has(key)){
-      xpApi.removeXP(XP_PER_ACTION);
-      awards.remove(key);
-    }
+    if(todayMl >= settings.goal && !awards.has(key)){ xpApi.addXP(XP_PER_ACTION); awards.add(key); }
+    else if(todayMl < settings.goal && awards.has(key)){ xpApi.removeXP(XP_PER_ACTION); awards.remove(key); }
+  // eslint-disable-next-line
   },[todayMl, settings.goal]);
- 
+
   function addWater(){setLog(l=>[...l,{id:Date.now(),ml:settings.portion,date:td}]);}
   function removeWater(){if(!todayE.length)return;const last=todayE[todayE.length-1];setLog(l=>l.filter(e=>e.id!==last.id));}
   const cx=100,cy=100,r=85;
@@ -757,7 +1306,7 @@ function Hydration({ xpApi, awards }) {
     </div>
   );
 }
- 
+
 // ============================================================
 // MOOD LOGGER
 // ============================================================
@@ -768,12 +1317,10 @@ const MOODS = [
   { key:"good",     label:"Good",     color:"teal" },
   { key:"excellent",label:"Excellent",color:"green" },
 ];
- 
+
 function MoodFace({ moodKey, size=44, glow=false }){
-  const m = MOODS.find(x=>x.key===moodKey);
-  if(!m) return null;
+  const m = MOODS.find(x=>x.key===moodKey); if(!m) return null;
   const c = COLORS[m.color];
-  // mouth path differs per mood
   let mouth;
   if(moodKey==="very_bad") mouth = <path d="M22 42 Q32 34 42 42" stroke={c.text} strokeWidth="2" fill="none" strokeLinecap="round"/>;
   else if(moodKey==="bad") mouth = <path d="M24 41 Q32 37 40 41" stroke={c.text} strokeWidth="2" fill="none" strokeLinecap="round"/>;
@@ -791,9 +1338,9 @@ function MoodFace({ moodKey, size=44, glow=false }){
     {mouth}
   </svg>;
 }
- 
+
 function MoodLogger() {
-  const [entries,setEntries]=useState(()=>load("pd_mood",{})); // {YYYY-MM-DD: moodKey}
+  const [entries,setEntries]=useState(()=>load("pd_mood",{}));
   const [settings,setSettings]=useState(()=>load("pd_mood_settings",{theme:"pink"}));
   const [settingsOpen,setSettingsOpen]=useState(false);
   const [viewMonth,setViewMonth]=useState(()=>{ const d=new Date(); return {y:d.getFullYear(),m:d.getMonth()}; });
@@ -803,11 +1350,10 @@ function MoodLogger() {
   const todays = entries[td];
   function pick(key){ setEntries(e=>({...e, [td]:key})); }
   const col = COLORS[settings.theme];
- 
-  // calendar grid
+
   const firstDay = new Date(viewMonth.y, viewMonth.m, 1);
   const daysInMonth = new Date(viewMonth.y, viewMonth.m+1, 0).getDate();
-  const startOffset = firstDay.getDay(); // 0=Sun
+  const startOffset = firstDay.getDay();
   const cells = [];
   for(let i=0;i<startOffset;i++) cells.push(null);
   for(let d=1; d<=daysInMonth; d++){
@@ -817,11 +1363,10 @@ function MoodLogger() {
   const monthName = new Date(viewMonth.y, viewMonth.m, 1).toLocaleString("en",{month:"long",year:"numeric"});
   function prevMonth(){ setViewMonth(v=>{ const m=v.m-1; if(m<0) return {y:v.y-1,m:11}; return {y:v.y,m}; }); }
   function nextMonth(){ setViewMonth(v=>{ const m=v.m+1; if(m>11) return {y:v.y+1,m:0}; return {y:v.y,m}; }); }
- 
-  // stats
+
   const moodCounts = MOODS.map(m=>({...m, count:Object.values(entries).filter(v=>v===m.key).length}));
   const totalLogged = Object.keys(entries).length;
- 
+
   return (
     <div style={{display:"flex",flexDirection:"column",gap:16}}>
       <div style={{display:"flex",justifyContent:"flex-end"}}><SettingsButton open={settingsOpen} onToggle={()=>setSettingsOpen(s=>!s)} color={settings.theme}/></div>
@@ -838,7 +1383,6 @@ function MoodLogger() {
         </div>
         {todays&&<p style={{fontSize:12,color:"#888780",textAlign:"center",marginTop:14}}>Logged for today · tap a different face to change</p>}
       </Card>
- 
       <Card>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
           <button onClick={prevMonth} style={{background:"none",border:"none",cursor:"pointer",fontSize:18,color:"#888780",padding:"2px 8px",borderRadius:8}}>‹</button>
@@ -859,7 +1403,6 @@ function MoodLogger() {
           })}
         </div>
       </Card>
- 
       <Card>
         <p style={{fontSize:13,fontWeight:500,color:"#888780",margin:"0 0 10px"}}>All-time mood</p>
         <div style={{display:"flex",justifyContent:"space-between",gap:8}}>
@@ -875,60 +1418,113 @@ function MoodLogger() {
     </div>
   );
 }
- 
+
 // ============================================================
-// MY SPACE (room + inventory)
+// MY SPACE  (the room — only accessible via Home button)
 // ============================================================
-function MySpace({ xpApi }) {
-  const { inv, setInv, room, setRoom, xp } = xpApi;
+function RoomBackground({ activeWall, activeFloor }){
+  // Renders the full room area with the active wall (top 60%) and floor (bottom 40%).
+  const wallId = `wallPat_${activeWall ? activeWall.design : "default"}_${activeWall && activeWall.plain ? "p":"t"}`;
+  const floorId = `floorPat_${activeFloor ? activeFloor.design : "default"}_${activeFloor && activeFloor.plain ? "p":"t"}`;
+  let wallFill = "#FBF9F3";
+  let wallPattern = null;
+  if(activeWall){
+    if(activeWall.plain){
+      wallFill = PLAIN_WALL_COLORS[activeWall.design];
+    } else {
+      const theme = TEX_WALL_THEMES[activeWall.design - 5];
+      if(theme){
+        wallFill = `url(#${wallId})`;
+        wallPattern = <pattern id={wallId} x="0" y="0" width="48" height="48" patternUnits="userSpaceOnUse">
+          <rect width="48" height="48" fill={theme.base}/>
+          <g transform="translate(0,0)"><MotifTile motif={theme.motif} base={theme.base} accent={theme.accent}/></g>
+          <g transform="translate(24,24)"><MotifTile motif={theme.motif} base={theme.base} accent={theme.accent}/></g>
+        </pattern>;
+      }
+    }
+  }
+  let floorFill = "#E8E6DE";
+  let floorPattern = null;
+  if(activeFloor){
+    if(activeFloor.plain){
+      floorFill = PLAIN_FLOOR_COLORS[activeFloor.design];
+    } else {
+      const theme = TEX_FLOOR_THEMES[activeFloor.design - 5];
+      if(theme){
+        floorFill = `url(#${floorId})`;
+        floorPattern = <pattern id={floorId} x="0" y="0" width="32" height="32" patternUnits="userSpaceOnUse">
+          <FloorMotif motif={theme.motif} base={theme.base} accent={theme.accent}/>
+        </pattern>;
+      }
+    }
+  }
+  return <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none" style={{position:"absolute",inset:0,borderRadius:20}}>
+    <defs>{wallPattern}{floorPattern}</defs>
+    <rect x="0" y="0" width="100" height="60" fill={wallFill}/>
+    <rect x="0" y="60" width="100" height="40" fill={floorFill}/>
+  </svg>;
+}
+
+function MySpace({ xpApi, onClose }) {
+  const { inv, setInv, room, setRoom, xp, activeWall, setActiveWall, activeFloor, setActiveFloor } = xpApi;
   const [bagOpen,setBagOpen]=useState(false);
+  const [bagTab,setBagTab]=useState("furniture"); // furniture / walls / floors / golden
   const roomRef = useRef(null);
-  const [drag,setDrag]=useState(null); // {id, source: 'room'|'inv', x, y, offsetX, offsetY}
- 
-  // Touch/mouse drag handling
+  const [drag,setDrag]=useState(null);
+
   useEffect(()=>{
     if(!drag) return;
     function move(e){
       const ev = e.touches ? e.touches[0] : e;
+      if(e.touches) e.preventDefault();
       setDrag(d=>d?{...d,x:ev.clientX,y:ev.clientY}:d);
     }
     function up(e){
       const ev = e.changedTouches ? e.changedTouches[0] : e;
       const x = ev.clientX, y = ev.clientY;
-      // check if dropped on bag icon
+      // bag drop?
       const bag = document.getElementById("bag-icon");
       if(bag){
         const r = bag.getBoundingClientRect();
         if(x>=r.left && x<=r.right && y>=r.top && y<=r.bottom){
-          // move to inventory
           if(drag.source==="room"){
             setRoom(rm=>{
               const item = rm.find(i=>i.id===drag.id);
-              if(item){ setInv(iv=>[...iv,{id:item.id, level:item.level}]); }
+              if(item){ setInv(iv=>[...iv,{id:item.id,level:item.level,kind:item.kind,design:item.design,plain:item.plain}]); }
               return rm.filter(i=>i.id!==drag.id);
             });
           }
-          setDrag(null);
-          return;
+          setDrag(null); return;
         }
       }
-      // dropped on room?
+      // dropped on room area?
       if(roomRef.current){
         const r = roomRef.current.getBoundingClientRect();
         if(x>=r.left && x<=r.right && y>=r.top && y<=r.bottom){
+          if(drag.kind==="wallpaper"){
+            // apply wallpaper
+            setActiveWall({level:drag.level, design:drag.design, plain:drag.plain});
+            // remove from inventory
+            setInv(iv=>iv.filter(i=>i.id!==drag.id));
+            setDrag(null); return;
+          }
+          if(drag.kind==="floor"){
+            setActiveFloor({level:drag.level, design:drag.design, plain:drag.plain});
+            setInv(iv=>iv.filter(i=>i.id!==drag.id));
+            setDrag(null); return;
+          }
+          // furniture / golden: position into room
           const px = ((x - r.left - drag.offsetX) / r.width) * 100;
           const py = ((y - r.top - drag.offsetY) / r.height) * 100;
           const clampedX = Math.max(0, Math.min(85, px));
           const clampedY = Math.max(0, Math.min(85, py));
           if(drag.source==="inv"){
-            // move from inv to room
             setInv(iv=>{
               const item = iv.find(i=>i.id===drag.id);
-              if(item){ setRoom(rm=>[...rm,{id:item.id,level:item.level,x:clampedX,y:clampedY}]); }
+              if(item){ setRoom(rm=>[...rm,{id:item.id,level:item.level,kind:item.kind,design:item.design,x:clampedX,y:clampedY}]); }
               return iv.filter(i=>i.id!==drag.id);
             });
           } else {
-            // reposition in room
             setRoom(rm=>rm.map(i=>i.id===drag.id?{...i,x:clampedX,y:clampedY}:i));
           }
         }
@@ -946,42 +1542,57 @@ function MySpace({ xpApi }) {
       window.removeEventListener("touchend",up);
     };
   },[drag]);
- 
+
   function startDrag(e, item, source){
     e.preventDefault();
     const ev = e.touches ? e.touches[0] : e;
     const rect = e.currentTarget.getBoundingClientRect();
     setDrag({
-      id:item.id, level:item.level, source,
+      id:item.id, level:item.level, kind:item.kind, design:item.design, plain:item.plain, source,
       x:ev.clientX, y:ev.clientY,
       offsetX: ev.clientX - rect.left,
       offsetY: ev.clientY - rect.top,
       size: rect.width
     });
   }
- 
+
+  // group inventory by kind for the bag tabs
+  const invFurn   = inv.filter(i=>i.kind==="furniture");
+  const invGold   = inv.filter(i=>i.kind==="golden");
+  const invWalls  = inv.filter(i=>i.kind==="wallpaper");
+  const invFloors = inv.filter(i=>i.kind==="floor");
+  const tabs = [
+    {key:"furniture", label:`Furniture (${invFurn.length})`, items:invFurn},
+    {key:"walls",     label:`Walls (${invWalls.length})`, items:invWalls},
+    {key:"floors",    label:`Floors (${invFloors.length})`, items:invFloors},
+    {key:"golden",    label:`Golden (${invGold.length})`, items:invGold},
+  ];
+  const currentTab = tabs.find(t=>t.key===bagTab) || tabs[0];
+
   return (
     <div style={{display:"flex",flexDirection:"column",gap:16}}>
-      <Card style={{textAlign:"center",padding:"10px 16px"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
         <p style={{fontSize:13,color:"#888780",margin:0}}>Level <span style={{color:COLORS.purple.text,fontWeight:500}}>{xp.level}</span> · {xp.xp}/{XP_PER_LEVEL} XP to next</p>
-        <p style={{fontSize:11,color:"#aaa8a2",margin:"4px 0 0"}}>Tap-hold an item to drag · drop on the room or the bag</p>
-      </Card>
- 
-      {/* The room */}
-      <div ref={roomRef} className="room-floor" style={{position:"relative",width:"100%",aspectRatio:"1/1",borderRadius:20,background:"linear-gradient(180deg, #FBF9F3 0%, #F1EFE8 60%, #E8E6DE 100%)",border:"0.5px solid #d3d1c7",overflow:"hidden",touchAction:"none"}}>
+        <button onClick={onClose} style={{background:"transparent",border:"1px solid #d3d1c7",borderRadius:20,padding:"4px 12px",fontSize:12,color:"#888780",cursor:"pointer"}}>Back to dashboard</button>
+      </div>
+
+      <div ref={roomRef} style={{position:"relative",width:"100%",aspectRatio:"1/1",borderRadius:20,border:"0.5px solid #d3d1c7",overflow:"hidden",touchAction:"none"}}>
+        <RoomBackground activeWall={activeWall} activeFloor={activeFloor}/>
         {/* wall/floor divider */}
-        <div style={{position:"absolute",left:0,right:0,top:"60%",height:1,background:"#d3d1c7",opacity:0.5}}/>
-        {room.length===0 && <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",color:"#aaa8a2",fontSize:13,textAlign:"center",padding:20}}>Your room is empty.<br/>Open the bag and drag furniture in.</div>}
+        <div style={{position:"absolute",left:0,right:0,top:"60%",height:1,background:"rgba(0,0,0,0.08)"}}/>
+        {room.length===0 && <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",color:"#665f55",fontSize:13,textAlign:"center",padding:20,background:"rgba(255,255,255,0.3)",backdropFilter:"blur(2px)",borderRadius:20}}>Your room is empty.<br/>Open the bag and drag furniture in.</div>}
         {room.map(item=>(
-          <div key={item.id}
-               className="furn-item"
+          <div key={item.id} className="furn-item"
                onMouseDown={e=>startDrag(e,item,"room")}
                onTouchStart={e=>startDrag(e,item,"room")}
                style={{position:"absolute",left:`${item.x}%`,top:`${item.y}%`,cursor:"grab",opacity:drag&&drag.id===item.id?0.3:1,width:"15%",aspectRatio:"1/1",display:"flex",alignItems:"center",justifyContent:"center",zIndex:2}}>
-            <div style={{width:"100%",height:"100%"}}><FurnSVG level={item.level} size="100%"/></div>
+            <div style={{width:"100%",height:"100%"}}>
+              {item.kind==="golden"
+                ? <GoldSVG design={item.design} size="100%"/>
+                : <FurnSVG design={item.design} size="100%"/>}
+            </div>
           </div>
         ))}
-        {/* Bag icon: bottom-left of the room */}
         <button id="bag-icon" onClick={()=>setBagOpen(o=>!o)} style={{position:"absolute",left:12,bottom:12,width:46,height:46,borderRadius:"50%",background:bagOpen?COLORS.amber.bg:"#fff",border:`1.5px solid ${bagOpen?COLORS.amber.border:"#d3d1c7"}`,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 2px 6px rgba(0,0,0,0.1)",zIndex:5,padding:0}}>
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={COLORS.amber.text} strokeWidth="1.6">
             <path d="M6 8h12l-1 12H7L6 8z"/>
@@ -990,60 +1601,77 @@ function MySpace({ xpApi }) {
           {inv.length>0&&<span style={{position:"absolute",top:-4,right:-4,background:COLORS.coral.mid,color:"#fff",fontSize:10,borderRadius:20,minWidth:18,height:18,padding:"0 5px",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:500}}>{inv.length}</span>}
         </button>
       </div>
- 
+
       {bagOpen && <Card>
-        <p style={{fontSize:13,fontWeight:500,color:"#888780",margin:"0 0 12px"}}>Inventory · {inv.length} item{inv.length===1?"":"s"}</p>
-        {inv.length===0 && <p style={{fontSize:13,color:"#aaa8a2",textAlign:"center",padding:"1rem 0"}}>Level up to unlock furniture</p>}
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill, minmax(70px, 1fr))",gap:10}}>
-          {inv.map(item=>{
-            const meta = furnitureFor(item.level);
-            return <div key={item.id}
-                 className="furn-item"
-                 onMouseDown={e=>startDrag(e,item,"inv")}
-                 onTouchStart={e=>startDrag(e,item,"inv")}
-                 style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4,padding:8,borderRadius:14,background:COLORS[meta.palette].bg,border:`1px solid ${COLORS[meta.palette].border}`,cursor:"grab",opacity:drag&&drag.id===item.id?0.3:1}}>
-              <FurnSVG level={item.level} size={42}/>
-              <span style={{fontSize:9,color:COLORS[meta.palette].text,textAlign:"center",lineHeight:1.1}}>{meta.name}</span>
-              <span style={{fontSize:9,color:"#888780"}}>Lv {item.level}</span>
-            </div>;
-          })}
+        <div style={{display:"flex",gap:6,marginBottom:12,overflowX:"auto"}}>
+          {tabs.map(t=><Pill key={t.key} active={bagTab===t.key} onClick={()=>setBagTab(t.key)} color="amber">{t.label}</Pill>)}
         </div>
+        {currentTab.items.length===0
+          ? <p style={{fontSize:13,color:"#aaa8a2",textAlign:"center",padding:"1rem 0"}}>Level up to unlock {bagTab}</p>
+          : <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill, minmax(74px, 1fr))",gap:10}}>
+              {currentTab.items.map(item=>(
+                <div key={item.id} className="furn-item"
+                     onMouseDown={e=>startDrag(e,item,"inv")}
+                     onTouchStart={e=>startDrag(e,item,"inv")}
+                     style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4,padding:8,borderRadius:14,background:"#faf7ef",border:"1px solid #e0ddd0",cursor:"grab",opacity:drag&&drag.id===item.id?0.3:1}}>
+                  <InventoryItemPreview it={item} size={42}/>
+                  <span style={{fontSize:9,color:"#665f55",textAlign:"center",lineHeight:1.1}}>{inventoryItemName(item)}</span>
+                  <span style={{fontSize:9,color:"#888780"}}>Lv {item.level}</span>
+                </div>
+              ))}
+            </div>}
+        {(activeWall || activeFloor) && <div style={{marginTop:12,paddingTop:12,borderTop:"1px solid #e8e6e0",display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
+          <p style={{fontSize:11,color:"#888780",margin:0,width:"100%"}}>Active surfaces (tap to remove):</p>
+          {activeWall && <button onClick={()=>{
+            // return active wall to inventory
+            setInv(iv=>[...iv,{id:`item_back_wall_${Date.now()}`,level:activeWall.level,kind:"wallpaper",design:activeWall.design,plain:activeWall.plain}]);
+            setActiveWall(null);
+          }} style={{display:"flex",alignItems:"center",gap:6,padding:"4px 10px",borderRadius:14,background:"#faf7ef",border:"1px solid #e0ddd0",cursor:"pointer"}}>
+            <WallSwatch design={activeWall.design} plain={activeWall.plain} size={24}/>
+            <span style={{fontSize:11,color:"#665f55"}}>Wall</span>
+          </button>}
+          {activeFloor && <button onClick={()=>{
+            setInv(iv=>[...iv,{id:`item_back_floor_${Date.now()}`,level:activeFloor.level,kind:"floor",design:activeFloor.design,plain:activeFloor.plain}]);
+            setActiveFloor(null);
+          }} style={{display:"flex",alignItems:"center",gap:6,padding:"4px 10px",borderRadius:14,background:"#faf7ef",border:"1px solid #e0ddd0",cursor:"pointer"}}>
+            <FloorSwatch design={activeFloor.design} plain={activeFloor.plain} size={24}/>
+            <span style={{fontSize:11,color:"#665f55"}}>Floor</span>
+          </button>}
+        </div>}
       </Card>}
- 
-      {/* Drag ghost */}
+
       {drag && <div style={{position:"fixed",left:drag.x-drag.offsetX,top:drag.y-drag.offsetY,width:drag.size,height:drag.size,pointerEvents:"none",zIndex:9999,opacity:0.9}}>
-        <FurnSVG level={drag.level} size={drag.size}/>
+        {drag.kind==="furniture" && <FurnSVG design={drag.design} size={drag.size}/>}
+        {drag.kind==="golden"    && <GoldSVG design={drag.design} size={drag.size}/>}
+        {drag.kind==="wallpaper" && <WallSwatch design={drag.design} plain={drag.plain} size={drag.size}/>}
+        {drag.kind==="floor"     && <FloorSwatch design={drag.design} plain={drag.plain} size={drag.size}/>}
       </div>}
     </div>
   );
 }
- 
+
 // ============================================================
-// PROGRESS
+// PROGRESS PAGE
 // ============================================================
 function Progress({ xpApi }) {
   const { xp } = xpApi;
-  // pull stats from storage
   const habits = load("pd_habits",[]);
   const entries = load("pd_time",[]);
   const hydrationSettings = load("pd_hydration",{portion:250,goal:2000,theme:"teal"});
   const hydrationLog = load("pd_hydration_log",[]);
   const td = today();
- 
   function streak(c){ let s=0,d=new Date(); while(true){ const ds=d.toISOString().slice(0,10); if(c.includes(ds)){s++;d.setDate(d.getDate()-1);}else break; } return s; }
   const longestStreak = habits.reduce((a,h)=>Math.max(a,streak(h.completions)),0);
   const totalFocusSec = entries.reduce((a,e)=>a+e.secs,0);
   const totalFocusHours = (totalFocusSec/3600).toFixed(1);
   const waterToday = hydrationLog.filter(e=>e.date===td).reduce((a,e)=>a+e.ml,0);
   const xpPct = Math.round((xp.xp/XP_PER_LEVEL)*100);
- 
   const stats = [
     { label:"Total focus", value:`${totalFocusHours}h`, sub:"all sessions", color:"teal" },
     { label:"Longest streak", value:`${longestStreak}`, sub:"days", color:"coral" },
     { label:"Water today", value:`${waterToday}`, sub:`of ${hydrationSettings.goal} ml`, color:"sky" },
     { label:"Level", value:`${xp.level}`, sub:`of ${MAX_LEVEL}`, color:"purple" },
   ];
- 
   return (
     <div style={{display:"flex",flexDirection:"column",gap:16}}>
       <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:12}}>
@@ -1056,7 +1684,6 @@ function Progress({ xpApi }) {
           </Card>;
         })}
       </div>
- 
       <Card>
         <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",marginBottom:8}}>
           <p style={{fontSize:13,fontWeight:500,color:"#888780",margin:0}}>XP to next level</p>
@@ -1069,17 +1696,68 @@ function Progress({ xpApi }) {
           {xp.level>=MAX_LEVEL ? "Maximum level reached! ✨" : `${XP_PER_LEVEL-xp.xp} XP until level ${xp.level+1}`}
         </p>
       </Card>
- 
       <Card>
         <p style={{fontSize:13,fontWeight:500,color:"#888780",margin:"0 0 6px"}}>How XP works</p>
-        <p style={{fontSize:12,color:"#888780",lineHeight:1.5,margin:0}}>
-          You earn {XP_PER_ACTION} XP for each habit checked, todo completed, focus session finished, and the daily water goal reached. Reach {XP_PER_LEVEL} XP to level up and unlock a new piece of furniture. Un-checking returns the XP — no spam.
+        <p style={{fontSize:12,color:"#888780",lineHeight:1.6,margin:0}}>
+          You earn {XP_PER_ACTION} XP per todo completed, habit checked, daily water goal reached, every 10 minutes of focus time (any combination), and every 7-day habit streak. Un-checking returns the XP. Once a todo is archived, crossing it off there is just tidying — no XP penalty.
         </p>
       </Card>
     </div>
   );
 }
- 
+
+// ============================================================
+// LEVEL-UP ANIMATIONS
+// ============================================================
+function LevelUpOverlay({ flash, onClose }){
+  if(!flash) return null;
+  const isLv30 = flash.milestone==="lv30";
+  const isLv40 = flash.milestone==="lv40";
+  const isLv100 = flash.milestone==="lv100";
+
+  // Stars for the lv30 animation
+  const stars = Array.from({length:14}).map((_,i)=>{
+    const a = (i/14)*Math.PI*2;
+    const r = 100 + (i%3)*30;
+    return { x: 50 + Math.cos(a)*r/4, y: 50 + Math.sin(a)*r/4, delay: (i*0.1).toFixed(2) };
+  });
+
+  return <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",backdropFilter:"blur(4px)",zIndex:10000,display:"flex",alignItems:"center",justifyContent:"center",animation:"fadeUp 0.3s ease-out",padding:20}}>
+    <div onClick={e=>e.stopPropagation()} style={{position:"relative",width:"100%",maxWidth:340,background:"#fff",borderRadius:24,padding:"2.5rem 1.5rem",textAlign:"center",animation:"celebPop 0.6s cubic-bezier(.4,1.4,.5,1)"}}>
+      {isLv100 ? <>
+        <div style={{display:"flex",justifyContent:"center",gap:6,marginBottom:14}}>
+          {[0,1,2,3,4].map(i=><div key={i} style={{animation:`celebPop 0.7s ease-out ${i*0.12}s both`}}><GoldSVG design={i} size={44}/></div>)}
+        </div>
+        <p style={{fontSize:14,color:COLORS.amber.text,fontWeight:500,margin:"0 0 6px",letterSpacing:1}}>LEVEL 100</p>
+        <p style={{fontSize:22,fontWeight:600,margin:"0 0 10px",background:"linear-gradient(90deg, #B8860B, #E9C46A, #B8860B)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",backgroundClip:"text"}}>You're an expert.</p>
+        <p style={{fontSize:13,color:"#666",lineHeight:1.5,margin:"0 0 16px"}}>One hundred levels of focus, habits, and care. You've unlocked the golden set — five rare pieces just for you.</p>
+        <button onClick={onClose} style={{borderRadius:14,padding:"8px 22px",background:COLORS.amber.mid,color:"#fff",border:"none",fontWeight:500,fontSize:14,cursor:"pointer"}}>Amazing</button>
+      </> : isLv30 ? <>
+        <div style={{position:"relative",height:120,marginBottom:8}}>
+          {stars.map((s,i)=>(
+            <svg key={i} width="20" height="20" viewBox="0 0 24 24" style={{position:"absolute",left:`${s.x}%`,top:`${s.y}%`,transform:"translate(-50%,-50%)",animation:`starTwinkle 1.4s ease-in-out ${s.delay}s infinite`}}>
+              <path d="M12 2 L14 9 L21 9 L15.5 13.5 L17.5 21 L12 16.5 L6.5 21 L8.5 13.5 L3 9 L10 9 Z" fill={COLORS.amber.mid}/>
+            </svg>
+          ))}
+          <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center"}}>
+            <p style={{fontSize:48,fontWeight:600,margin:0,color:COLORS.purple.text}}>Lv 30</p>
+          </div>
+        </div>
+        <p style={{fontSize:13,color:"#666",margin:"0 0 16px",lineHeight:1.5}}>Wallpapers and floors are unlocked! Find them in your bag.</p>
+        <button onClick={onClose} style={{borderRadius:14,padding:"8px 22px",background:COLORS.purple.mid,color:"#fff",border:"none",fontWeight:500,fontSize:14,cursor:"pointer"}}>Continue</button>
+      </> : isLv40 ? <>
+        <p style={{fontSize:36,fontWeight:600,margin:"0 0 8px",color:COLORS.teal.text}}>Lv 40</p>
+        <p style={{fontSize:13,color:"#666",margin:"0 0 16px",lineHeight:1.5}}>Textured wallpapers and floors are now unlocking — wood, marble, animals, and more.</p>
+        <button onClick={onClose} style={{borderRadius:14,padding:"8px 22px",background:COLORS.teal.mid,color:"#fff",border:"none",fontWeight:500,fontSize:14,cursor:"pointer"}}>Nice</button>
+      </> : <>
+        <p style={{fontSize:36,fontWeight:600,margin:"0 0 8px",color:COLORS.purple.text}}>Lv {flash.level}</p>
+        <p style={{fontSize:13,color:"#666",margin:"0 0 16px"}}>New item unlocked in your bag!</p>
+        <button onClick={onClose} style={{borderRadius:14,padding:"8px 22px",background:COLORS.purple.mid,color:"#fff",border:"none",fontWeight:500,fontSize:14,cursor:"pointer"}}>Cool</button>
+      </>}
+    </div>
+  </div>;
+}
+
 // ============================================================
 // APP SHELL
 // ============================================================
@@ -1087,21 +1765,39 @@ function App() {
   const [tab,setTab]=useState("todos");
   const xpApi = useXP();
   const awards = useAwards();
-  // expose xpApi via state-bag for child pages
-  return (
-    <div style={{maxWidth:660,margin:"0 auto",padding:"1.5rem 1rem",position:"relative"}}>
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"1.25rem"}}>
-        <h2 style={{fontSize:20,fontWeight:500,margin:0}}>My dashboard</h2>
-        <button onClick={()=>setTab("space")} className={xpApi.flash?"level-up-flash":""}
-          style={{width:46,height:46,borderRadius:"50%",border:tab==="space"?`2px solid ${COLORS.purple.mid}`:"1.5px solid #d3d1c7",background:tab==="space"?COLORS.purple.bg:"#fff",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",position:"relative"}}>
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={COLORS.purple.text} strokeWidth="1.6">
-            <path d="M3 11l9-7 9 7v9a2 2 0 0 1-2 2h-4v-7h-6v7H5a2 2 0 0 1-2-2v-9z"/>
-          </svg>
-          {xpApi.flash && <span style={{position:"absolute",top:-6,right:-6,background:COLORS.amber.mid,color:"#fff",fontSize:9,borderRadius:20,padding:"2px 6px",fontWeight:500,whiteSpace:"nowrap"}}>Lv {xpApi.flash}!</span>}
+
+  if(tab==="space"){
+    return <div style={{maxWidth:660,margin:"0 auto",padding:"1.5rem 1rem"}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"1rem"}}>
+        <h2 style={{fontSize:20,fontWeight:500,margin:0}}>My space</h2>
+        <button onClick={()=>setTab("todos")} style={{display:"flex",alignItems:"center",gap:6,background:"#fff",border:"1.5px solid #d3d1c7",borderRadius:23,padding:"4px 12px 4px 6px",cursor:"pointer"}}>
+          <span style={{width:32,height:32,borderRadius:"50%",background:COLORS.purple.bg,display:"flex",alignItems:"center",justifyContent:"center"}}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={COLORS.purple.text} strokeWidth="1.8"><path d="M3 11l9-7 9 7v9a2 2 0 0 1-2 2h-4v-7h-6v7H5a2 2 0 0 1-2-2v-9z"/></svg>
+          </span>
+          <span style={{fontSize:13,color:"#3a3935",fontWeight:500}}>Home</span>
         </button>
       </div>
- 
-      {/* XP bar always visible */}
+      <MySpace xpApi={xpApi} onClose={()=>setTab("todos")}/>
+      <LevelUpOverlay flash={xpApi.flash} onClose={()=>xpApi.setFlash(null)}/>
+    </div>;
+  }
+
+  return (
+    <div style={{maxWidth:660,margin:"0 auto",padding:"1.5rem 1rem",position:"relative"}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"1rem"}}>
+        <h2 style={{fontSize:20,fontWeight:500,margin:0}}>My dashboard</h2>
+        {/* Home / My space access — only entry point */}
+        <button onClick={()=>setTab("space")} className={xpApi.flash?"lvflash":""}
+          style={{display:"flex",alignItems:"center",gap:6,background:"#fff",border:"1.5px solid #d3d1c7",borderRadius:23,padding:"4px 12px 4px 6px",cursor:"pointer",position:"relative"}}>
+          <span style={{width:32,height:32,borderRadius:"50%",background:COLORS.purple.bg,display:"flex",alignItems:"center",justifyContent:"center"}}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={COLORS.purple.text} strokeWidth="1.8"><path d="M3 11l9-7 9 7v9a2 2 0 0 1-2 2h-4v-7h-6v7H5a2 2 0 0 1-2-2v-9z"/></svg>
+          </span>
+          <span style={{fontSize:13,color:"#3a3935",fontWeight:500}}>Home</span>
+          {xpApi.flash && <span style={{position:"absolute",top:-8,right:-8,background:COLORS.amber.mid,color:"#fff",fontSize:9,borderRadius:20,padding:"2px 6px",fontWeight:500,whiteSpace:"nowrap"}}>Lv {xpApi.flash.level}!</span>}
+        </button>
+      </div>
+
+      {/* XP bar */}
       <div style={{marginBottom:"1rem",display:"flex",alignItems:"center",gap:10}}>
         <span style={{fontSize:11,color:"#888780",fontWeight:500,minWidth:42}}>Lv {xpApi.xp.level}</span>
         <div className="bar-bg" style={{flex:1,height:6,borderRadius:20,background:"#e8e6e0",overflow:"hidden"}}>
@@ -1109,27 +1805,41 @@ function App() {
         </div>
         <span style={{fontSize:11,color:"#888780",minWidth:48,textAlign:"right"}}>{xpApi.xp.xp}/{XP_PER_LEVEL}</span>
       </div>
- 
-      <div className="tab-bar" style={{display:"flex",gap:4,background:"#ebe9e2",borderRadius:40,padding:"5px 6px",marginBottom:"1.25rem",overflowX:"auto",flexWrap:"wrap"}}>
-        <Tab label="To-do" active={tab==="todos"} onClick={()=>setTab("todos")} />
-        <Tab label="Time" active={tab==="time"} onClick={()=>setTab("time")} />
-        <Tab label="Habits" active={tab==="habits"} onClick={()=>setTab("habits")} />
-        <Tab label="Hydration" active={tab==="hydration"} onClick={()=>setTab("hydration")} />
-        <Tab label="Mood" active={tab==="mood"} onClick={()=>setTab("mood")} />
-        <Tab label="My space" active={tab==="space"} onClick={()=>setTab("space")} />
-        <Tab label="Progress" active={tab==="progress"} onClick={()=>setTab("progress")} />
+
+      {/* Shrinkable tab bar — all on one line, never wraps */}
+      <div className="tab-bar" style={{background:"#ebe9e2",borderRadius:40,padding:"5px 6px",marginBottom:"1.25rem"}}>
+        <div className="tab-bar-inner">
+          {[
+            ["todos","To-do"],
+            ["time","Time"],
+            ["habits","Habits"],
+            ["hydration","Water"],
+            ["mood","Mood"],
+            ["progress","Progress"],
+          ].map(([k,label])=>{
+            const active = tab===k;
+            return <button key={k} className="tab-btn" onClick={()=>setTab(k)} style={{
+              border: active?"1.5px solid #b4b2a9":"1.5px solid transparent",
+              background: active?"#fff":"transparent",
+              color: active?"#1a1a18":"#888780",
+              fontWeight: active?500:400,
+            }}>{label}</button>;
+          })}
+        </div>
       </div>
+
       {tab==="todos"&&<Todos xpApi={xpApi} awards={awards}/>}
       {tab==="time"&&<TimeTracker xpApi={xpApi} awards={awards}/>}
       {tab==="habits"&&<Habits xpApi={xpApi} awards={awards}/>}
       {tab==="hydration"&&<Hydration xpApi={xpApi} awards={awards}/>}
       {tab==="mood"&&<MoodLogger/>}
-      {tab==="space"&&<MySpace xpApi={xpApi}/>}
       {tab==="progress"&&<Progress xpApi={xpApi}/>}
+
+      <LevelUpOverlay flash={xpApi.flash} onClose={()=>xpApi.setFlash(null)}/>
     </div>
   );
 }
- 
+
 ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
 </script>
 </body>
