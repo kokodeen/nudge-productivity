@@ -10,31 +10,33 @@
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f5f4f0; color: #1a1a18; min-height: 100vh; }
-  input, select, button, textarea { font-family: inherit; }
-  input[type=text], input[type=date], input[type=number], select, textarea {
+  input, select, button { font-family: inherit; }
+  input[type=text], input[type=date], input[type=number], select {
     border-radius: 14px; border: 0.5px solid #d3d1c7; padding: 8px 14px;
     font-size: 14px; background: #f1efe8; color: #1a1a18; outline: none;
   }
-  input[type=text]:focus, input[type=date]:focus, input[type=number]:focus, select:focus, textarea:focus { border-color: #888780; }
-  input[type=checkbox] { accent-color: #7f77dd; }
+  input[type=text]:focus, input[type=date]:focus, input[type=number]:focus, select:focus { border-color: #888780; }
+  input[type=checkbox] { accent-color: var(--accent-mid, #7f77dd); }
   input[type=number] { -moz-appearance: textfield; }
   input[type=number]::-webkit-outer-spin-button, input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
   @media (prefers-color-scheme: dark) {
     body { background: #1c1c1a; color: #f0ede8; }
-    input[type=text], input[type=date], input[type=number], select, textarea { background: #2c2c2a; border-color: #444441; color: #f0ede8; }
+    input[type=text], input[type=date], input[type=number], select { background: #2c2c2a; border-color: #444441; color: #f0ede8; }
     .card { background: #2c2c2a !important; border-color: #444441 !important; }
     .tab-bar { background: #2c2c2a !important; }
     .metric { background: #2c2c2a !important; }
     .bar-bg { background: #444441 !important; }
-    .room-floor { background: #3a3a37 !important; }
+    .room-floor { background: #2c2c2a !important; }
   }
   .furn-item { user-select: none; -webkit-user-select: none; touch-action: none; }
+  .level-up-flash { animation: lvlflash 1.2s ease-out; }
+  @keyframes lvlflash { 0%{transform:scale(0.6);opacity:0;} 30%{transform:scale(1.1);opacity:1;} 100%{transform:scale(1);opacity:1;} }
 </style>
 </head>
 <body>
 <div id="root"></div>
 <script type="text/babel">
-const { useState, useEffect, useRef, useCallback } = React;
+const { useState, useEffect, useRef, useMemo } = React;
  
 const COLORS = {
   purple: { bg: "#EEEDFE", border: "#AFA9EC", text: "#3C3489", mid: "#7F77DD" },
@@ -42,348 +44,386 @@ const COLORS = {
   coral:  { bg: "#FAECE7", border: "#F0997B", text: "#712B13", mid: "#D85A30" },
   amber:  { bg: "#FAEEDA", border: "#EF9F27", text: "#633806", mid: "#BA7517" },
   green:  { bg: "#EAF3DE", border: "#97C459", text: "#27500A", mid: "#639922" },
-  pink:   { bg: "#FCEAF1", border: "#EC9AB8", text: "#7A1F44", mid: "#D85A8C" },
-  sky:    { bg: "#E3F0FB", border: "#8FBEE6", text: "#10406B", mid: "#3F8BC9" },
+  pink:   { bg: "#FBE7EE", border: "#F09BBC", text: "#7A1F44", mid: "#D54B82" },
+  sky:    { bg: "#E2EFFB", border: "#8AB8E8", text: "#0E3A66", mid: "#3C82C7" },
 };
 const CAT_OPTIONS = ["Work","Personal","Health","Learning","Other"];
 const CAT_COLOR = { Work:"purple", Personal:"teal", Health:"coral", Learning:"amber", Other:"green" };
+const URGENCY_OPTIONS = ["Low","Medium","High","Critical"];
+const URGENCY_RANK = { Critical:0, High:1, Medium:2, Low:3 };
+const URGENCY_COLOR = { Critical:"coral", High:"amber", Medium:"purple", Low:"green" };
  
-const URGENCY = [
-  { key: "critical", label: "Critical", rank: 3, color: "coral" },
-  { key: "high",     label: "High",     rank: 2, color: "amber" },
-  { key: "medium",   label: "Medium",   rank: 1, color: "purple" },
-  { key: "low",      label: "Low",      rank: 0, color: "green" },
-];
-const URGENCY_BY_KEY = Object.fromEntries(URGENCY.map(u=>[u.key,u]));
- 
-const MOODS = [
-  { key: "veryBad", label: "Very bad", color: "coral",  face: "veryBad" },
-  { key: "bad",     label: "Bad",      color: "amber",  face: "bad" },
-  { key: "neutral", label: "Neutral",  color: "green",  face: "neutral" },
-  { key: "good",    label: "Good",     color: "teal",   face: "good" },
-  { key: "great",   label: "Excellent",color: "purple", face: "great" },
-];
-const MOOD_BY_KEY = Object.fromEntries(MOODS.map(m=>[m.key,m]));
- 
-// ---------- storage helpers ----------
 function load(k,fb){ try{ const v=localStorage.getItem(k); return v?JSON.parse(v):fb; }catch{ return fb; } }
 function save(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch{} }
 function today(){ return new Date().toISOString().slice(0,10); }
 function fmt(secs){ const h=Math.floor(secs/3600),m=Math.floor((secs%3600)/60),s=secs%60; if(h>0)return`${h}h ${m}m`; return`${m}m ${s}s`; }
-function fmtClock(secs){ secs=Math.max(0,secs); const h=Math.floor(secs/3600),m=Math.floor((secs%3600)/60),s=secs%60; if(h>0)return`${h}:${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`; return`${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`; }
+function fmtClock(secs){ const m=Math.floor(secs/60),s=secs%60; return `${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`; }
  
-// ---------- XP system ----------
+// ============ XP SYSTEM ============
+// xpForLevel(n) -> xp needed to go from level n to n+1 (always 70 per current spec)
 const XP_PER_LEVEL = 70;
-const MAX_LEVEL = 100;
 const XP_PER_ACTION = 5;
+const MAX_LEVEL = 100;
  
 function useXP() {
-  const [xp,setXp] = useState(()=>load("pd_xp",{total:0,level:1,inLevel:0,inventory:[],placed:{},awarded:[]}));
+  const [xp,setXp] = useState(()=>load("pd_xp",{level:1, xp:0, totalGained:0}));
+  const [inv,setInv] = useState(()=>load("pd_inventory",[])); // list of {id, level}
+  const [room,setRoom] = useState(()=>load("pd_room",[])); // list of {id, x, y}
+  const [flash,setFlash] = useState(null);
   useEffect(()=>save("pd_xp",xp),[xp]);
-  const award = useCallback((key)=>{
+  useEffect(()=>save("pd_inventory",inv),[inv]);
+  useEffect(()=>save("pd_room",room),[room]);
+ 
+  function addXP(amount){
     setXp(prev=>{
-      if (prev.awarded.includes(key)) return prev;
-      if (prev.level >= MAX_LEVEL) {
-        return { ...prev, awarded:[...prev.awarded, key] };
-      }
-      let newTotal = prev.total + XP_PER_ACTION;
+      if(prev.level>=MAX_LEVEL && prev.xp>=XP_PER_LEVEL) return prev;
       let newLevel = prev.level;
-      let newInLevel = prev.inLevel + XP_PER_ACTION;
-      let newInventory = [...prev.inventory];
-      while (newInLevel >= XP_PER_LEVEL && newLevel < MAX_LEVEL) {
-        newInLevel -= XP_PER_LEVEL;
+      let newXp = prev.xp + amount;
+      const unlocked = [];
+      while(newXp >= XP_PER_LEVEL && newLevel < MAX_LEVEL){
+        newXp -= XP_PER_LEVEL;
         newLevel += 1;
-        // gain furniture #newLevel (1-indexed up to MAX_LEVEL)
-        if (newLevel <= MAX_LEVEL) {
-          newInventory.push({ id: `f${newLevel}_${Date.now()}_${Math.random().toString(36).slice(2,7)}`, furnId: newLevel });
-        }
+        unlocked.push(newLevel);
       }
-      if (newLevel >= MAX_LEVEL) { newLevel = MAX_LEVEL; newInLevel = XP_PER_LEVEL; }
-      return { ...prev, total:newTotal, level:newLevel, inLevel:newInLevel, inventory:newInventory, awarded:[...prev.awarded, key] };
+      if(newLevel>=MAX_LEVEL){ newXp = Math.min(newXp, XP_PER_LEVEL); }
+      if(unlocked.length){
+        setInv(curr=>[...curr, ...unlocked.map(l=>({id:`furn_${l}_${Date.now()}_${l}`, level:l}))]);
+        setFlash(unlocked[unlocked.length-1]);
+        setTimeout(()=>setFlash(null), 2200);
+      }
+      return { level:newLevel, xp:newXp, totalGained:prev.totalGained+amount };
     });
-  },[]);
-  const placeFurniture = useCallback((invId, x, y)=>{
+  }
+  function removeXP(amount){
     setXp(prev=>{
-      const item = prev.inventory.find(i=>i.id===invId);
-      if (!item) return prev;
-      return {
-        ...prev,
-        inventory: prev.inventory.filter(i=>i.id!==invId),
-        placed: { ...prev.placed, [invId]: { furnId: item.furnId, x, y } }
-      };
+      let newLevel = prev.level;
+      let newXp = prev.xp - amount;
+      const levelsLost = []; // levels we are un-gaining (the level numbers the items were tied to)
+      while(newXp < 0 && newLevel > 1){
+        levelsLost.push(newLevel); // current level's reward gets revoked
+        newLevel -= 1;
+        newXp += XP_PER_LEVEL;
+      }
+      if(newXp<0) newXp = 0;
+      if(levelsLost.length){
+        // remove items for those levels — prefer inventory first, then room
+        setInv(curr=>{
+          const remaining = [...curr];
+          const stillToRemove = [];
+          for(const lvl of levelsLost){
+            const idx = remaining.map(x=>x.level).lastIndexOf(lvl);
+            if(idx!==-1){ remaining.splice(idx,1); }
+            else { stillToRemove.push(lvl); }
+          }
+          if(stillToRemove.length){
+            setRoom(rc=>{
+              const rem = [...rc];
+              for(const lvl of stillToRemove){
+                const idx = rem.map(x=>x.level).lastIndexOf(lvl);
+                if(idx!==-1) rem.splice(idx,1);
+              }
+              return rem;
+            });
+          }
+          return remaining;
+        });
+      }
+      return { level:newLevel, xp:newXp, totalGained:Math.max(0,prev.totalGained-amount) };
     });
-  },[]);
-  const movePlaced = useCallback((id, x, y)=>{
-    setXp(prev=>{
-      if (!prev.placed[id]) return prev;
-      return { ...prev, placed: { ...prev.placed, [id]: { ...prev.placed[id], x, y } } };
-    });
-  },[]);
-  const returnToInventory = useCallback((id)=>{
-    setXp(prev=>{
-      const item = prev.placed[id];
-      if (!item) return prev;
-      const newPlaced = { ...prev.placed };
-      delete newPlaced[id];
-      return {
-        ...prev,
-        placed: newPlaced,
-        inventory: [...prev.inventory, { id, furnId: item.furnId }]
-      };
-    });
-  },[]);
-  return { xp, award, placeFurniture, movePlaced, returnToInventory };
+  }
+  return { xp, inv, setInv, room, setRoom, addXP, removeXP, flash };
 }
  
-// ---------- furniture catalog (100 items) ----------
-// Each item: name + render fn returning SVG children inside a 60x60 box.
-// Categories: plants, lamps, chairs, sofas, tables, beds, rugs, decor, etc.
-// All cute, minimalist, soft tones — same vibe as the rest.
- 
-const FURN_PALETTE = {
-  wood: "#C8A57A", woodDark: "#9D7C52", leaf: "#7FB069", leafDark: "#5A8C44",
-  pot: "#C97D5D", potDark: "#9C5840", cream: "#F4ECD8", creamDark: "#D8C9A3",
-  pink: "#F0AFC4", pinkDark: "#C77999", sky: "#A8C8E8", skyDark: "#6E9BC6",
-  lilac: "#C7BCE8", lilacDark: "#9285C2", peach: "#F5C09C", peachDark: "#C98E6A",
-  sage: "#A8C5A2", sageDark: "#7A9A75", grey: "#C8C5BD", greyDark: "#8E8B83",
-  warm: "#E8B574", warmDark: "#B58447", dark: "#3D3A35",
-};
-const P = FURN_PALETTE;
- 
-// helper to make potted plants with variations
-const pot = (color, darker) => `<rect x="22" y="36" width="16" height="14" rx="2" fill="${color}"/><rect x="20" y="34" width="20" height="4" rx="1" fill="${darker}"/>`;
-const trunk = `<rect x="29" y="30" width="2" height="8" fill="${P.woodDark}"/>`;
- 
-const FURNITURE = [
-  // 1-10: starter plants
-  { name: "Tiny succulent", svg: `<rect x="24" y="40" width="12" height="10" rx="1" fill="${P.pot}"/><circle cx="30" cy="38" r="5" fill="${P.leaf}"/><circle cx="26" cy="36" r="3" fill="${P.leafDark}"/><circle cx="34" cy="36" r="3" fill="${P.leafDark}"/>` },
-  { name: "Small cactus", svg: pot(P.pot, P.potDark) + `<rect x="27" y="22" width="6" height="16" rx="3" fill="${P.leaf}"/><rect x="22" y="28" width="4" height="8" rx="2" fill="${P.leaf}"/><rect x="34" y="26" width="4" height="10" rx="2" fill="${P.leaf}"/>` },
-  { name: "Round plant", svg: pot(P.cream, P.creamDark) + `<circle cx="30" cy="28" r="9" fill="${P.leaf}"/><circle cx="27" cy="26" r="2" fill="${P.leafDark}"/>` },
-  { name: "Tall fern", svg: pot(P.pot, P.potDark) + trunk + `<ellipse cx="30" cy="20" rx="9" ry="7" fill="${P.leaf}"/><ellipse cx="24" cy="24" rx="4" ry="3" fill="${P.leafDark}"/><ellipse cx="36" cy="24" rx="4" ry="3" fill="${P.leafDark}"/>` },
-  { name: "Heart plant", svg: pot(P.pink, P.pinkDark) + `<path d="M30 32 C24 26, 22 22, 26 20 C28 19, 30 21, 30 23 C30 21, 32 19, 34 20 C38 22, 36 26, 30 32 Z" fill="${P.leaf}"/>` },
-  { name: "Daisy pot", svg: pot(P.sky, P.skyDark) + trunk + `<circle cx="30" cy="22" r="2" fill="${P.warm}"/><circle cx="26" cy="22" r="2.5" fill="${P.cream}"/><circle cx="34" cy="22" r="2.5" fill="${P.cream}"/><circle cx="30" cy="18" r="2.5" fill="${P.cream}"/><circle cx="30" cy="26" r="2.5" fill="${P.cream}"/>` },
-  { name: "Bonsai", svg: pot(P.wood, P.woodDark) + `<rect x="28" y="24" width="4" height="12" fill="${P.woodDark}"/><circle cx="26" cy="22" r="5" fill="${P.leaf}"/><circle cx="34" cy="22" r="5" fill="${P.leaf}"/><circle cx="30" cy="18" r="5" fill="${P.leafDark}"/>` },
-  { name: "Tulip", svg: pot(P.lilac, P.lilacDark) + `<rect x="29" y="26" width="2" height="10" fill="${P.leafDark}"/><path d="M26 24 C26 20, 30 18, 30 22 C30 18, 34 20, 34 24 C34 28, 26 28, 26 24 Z" fill="${P.pink}"/>` },
-  { name: "Mushroom", svg: `<rect x="26" y="36" width="8" height="12" rx="1" fill="${P.cream}"/><path d="M16 36 Q30 14, 44 36 Z" fill="${P.coral || "#D85A30"}"/><circle cx="22" cy="30" r="2" fill="${P.cream}"/><circle cx="32" cy="26" r="2" fill="${P.cream}"/><circle cx="38" cy="32" r="2" fill="${P.cream}"/>` },
-  { name: "Hanging vine", svg: `<rect x="20" y="14" width="20" height="3" rx="1" fill="${P.wood}"/><rect x="22" y="17" width="16" height="8" rx="2" fill="${P.pot}"/><path d="M24 25 Q22 35, 24 44" stroke="${P.leaf}" stroke-width="2" fill="none"/><path d="M30 25 Q32 38, 30 48" stroke="${P.leaf}" stroke-width="2" fill="none"/><path d="M36 25 Q38 34, 36 44" stroke="${P.leaf}" stroke-width="2" fill="none"/><circle cx="24" cy="44" r="2" fill="${P.leafDark}"/><circle cx="30" cy="48" r="2" fill="${P.leafDark}"/><circle cx="36" cy="44" r="2" fill="${P.leafDark}"/>` },
-  // 11-20: lamps and lights
-  { name: "Floor lamp", svg: `<rect x="29" y="20" width="2" height="28" fill="${P.greyDark}"/><rect x="22" y="46" width="16" height="4" rx="1" fill="${P.greyDark}"/><path d="M22 22 L38 22 L34 12 L26 12 Z" fill="${P.warm}"/>` },
-  { name: "Table lamp", svg: `<rect x="24" y="42" width="12" height="6" rx="1" fill="${P.wood}"/><rect x="29" y="32" width="2" height="10" fill="${P.greyDark}"/><path d="M22 32 L38 32 L34 24 L26 24 Z" fill="${P.cream}"/>` },
-  { name: "Round lantern", svg: `<rect x="29" y="14" width="2" height="6" fill="${P.dark}"/><circle cx="30" cy="32" r="12" fill="${P.warm}" opacity="0.9"/><circle cx="30" cy="32" r="12" fill="none" stroke="${P.dark}" stroke-width="1.5"/><rect x="24" y="20" width="12" height="2" fill="${P.dark}"/>` },
-  { name: "Candle", svg: `<rect x="23" y="36" width="14" height="12" rx="1" fill="${P.wood}"/><rect x="27" y="22" width="6" height="14" fill="${P.cream}"/><path d="M30 14 Q28 18, 30 22 Q32 18, 30 14 Z" fill="${P.warm}"/>` },
-  { name: "Paper lantern", svg: `<rect x="29" y="10" width="2" height="6" fill="${P.dark}"/><ellipse cx="30" cy="28" rx="14" ry="16" fill="${P.cream}"/><ellipse cx="30" cy="28" rx="14" ry="16" fill="none" stroke="${P.creamDark}" stroke-width="1"/><line x1="16" y1="28" x2="44" y2="28" stroke="${P.creamDark}" stroke-width="0.5"/>` },
-  { name: "Desk lamp", svg: `<rect x="22" y="46" width="16" height="4" rx="1" fill="${P.greyDark}"/><path d="M30 46 Q30 32, 22 28" stroke="${P.greyDark}" stroke-width="2" fill="none"/><circle cx="22" cy="28" r="6" fill="${P.warm}"/>` },
-  { name: "String lights", svg: `<path d="M10 20 Q30 28, 50 20" stroke="${P.greyDark}" stroke-width="1" fill="none"/><circle cx="16" cy="22" r="2.5" fill="${P.warm}"/><circle cx="24" cy="25" r="2.5" fill="${P.pink}"/><circle cx="32" cy="26" r="2.5" fill="${P.warm}"/><circle cx="40" cy="25" r="2.5" fill="${P.sky}"/><circle cx="48" cy="22" r="2.5" fill="${P.warm}"/>` },
-  { name: "Salt lamp", svg: `<rect x="22" y="44" width="16" height="6" rx="1" fill="${P.wood}"/><path d="M24 44 L36 44 L34 24 L26 24 Z" fill="${P.peach}"/>` },
-  { name: "Mini chandelier", svg: `<rect x="29" y="8" width="2" height="8" fill="${P.dark}"/><path d="M14 16 L46 16" stroke="${P.warm}" stroke-width="2"/><circle cx="18" cy="22" r="3" fill="${P.warm}"/><circle cx="30" cy="24" r="3" fill="${P.warm}"/><circle cx="42" cy="22" r="3" fill="${P.warm}"/><line x1="18" y1="16" x2="18" y2="20" stroke="${P.dark}" stroke-width="1"/><line x1="30" y1="16" x2="30" y2="22" stroke="${P.dark}" stroke-width="1"/><line x1="42" y1="16" x2="42" y2="20" stroke="${P.dark}" stroke-width="1"/>` },
-  { name: "Bedside lamp", svg: `<rect x="20" y="44" width="20" height="6" rx="1" fill="${P.lilac}"/><rect x="29" y="30" width="2" height="14" fill="${P.greyDark}"/><ellipse cx="30" cy="26" rx="10" ry="6" fill="${P.lilacDark}"/>` },
-  // 21-30: chairs
-  { name: "Wooden stool", svg: `<rect x="20" y="28" width="20" height="6" rx="2" fill="${P.wood}"/><rect x="22" y="34" width="3" height="14" fill="${P.woodDark}"/><rect x="35" y="34" width="3" height="14" fill="${P.woodDark}"/>` },
-  { name: "Cushioned chair", svg: `<rect x="20" y="32" width="20" height="10" rx="3" fill="${P.pink}"/><rect x="20" y="18" width="20" height="16" rx="3" fill="${P.pinkDark}"/><rect x="22" y="42" width="3" height="8" fill="${P.woodDark}"/><rect x="35" y="42" width="3" height="8" fill="${P.woodDark}"/>` },
-  { name: "Armchair", svg: `<rect x="14" y="26" width="32" height="20" rx="6" fill="${P.sky}"/><rect x="14" y="34" width="6" height="14" rx="3" fill="${P.skyDark}"/><rect x="40" y="34" width="6" height="14" rx="3" fill="${P.skyDark}"/><rect x="20" y="34" width="20" height="10" rx="3" fill="${P.cream}"/>` },
-  { name: "Beanbag", svg: `<path d="M14 46 Q14 24, 30 22 Q46 24, 46 46 Q30 50, 14 46 Z" fill="${P.peach}"/><path d="M22 30 Q30 28, 38 30" stroke="${P.peachDark}" stroke-width="1" fill="none"/>` },
-  { name: "Rocking chair", svg: `<rect x="18" y="34" width="20" height="4" fill="${P.wood}"/><rect x="18" y="16" width="4" height="22" fill="${P.wood}"/><path d="M16 38 Q16 46, 24 46 L34 46 Q42 46, 42 38" stroke="${P.woodDark}" stroke-width="2" fill="none"/><rect x="22" y="20" width="14" height="2" fill="${P.woodDark}"/><rect x="22" y="26" width="14" height="2" fill="${P.woodDark}"/>` },
-  { name: "Egg chair", svg: `<path d="M16 44 Q12 20, 30 18 Q48 20, 44 44 Z" fill="${P.lilac}"/><path d="M22 40 Q22 26, 30 24 Q38 26, 38 40 Z" fill="${P.cream}"/><rect x="26" y="44" width="8" height="4" fill="${P.dark}"/>` },
-  { name: "Stool with cushion", svg: `<rect x="22" y="38" width="16" height="3" fill="${P.wood}"/><ellipse cx="30" cy="32" rx="12" ry="5" fill="${P.peach}"/><rect x="23" y="40" width="2" height="8" fill="${P.woodDark}"/><rect x="35" y="40" width="2" height="8" fill="${P.woodDark}"/>` },
-  { name: "Folding chair", svg: `<rect x="20" y="30" width="20" height="3" fill="${P.greyDark}"/><rect x="20" y="14" width="3" height="20" fill="${P.greyDark}"/><rect x="20" y="14" width="20" height="3" fill="${P.greyDark}"/><line x1="22" y1="33" x2="20" y2="48" stroke="${P.greyDark}" stroke-width="2"/><line x1="38" y1="33" x2="40" y2="48" stroke="${P.greyDark}" stroke-width="2"/>` },
-  { name: "Pouf", svg: `<ellipse cx="30" cy="38" rx="14" ry="10" fill="${P.sage}"/><ellipse cx="30" cy="34" rx="14" ry="3" fill="${P.sageDark}"/><line x1="20" y1="38" x2="20" y2="44" stroke="${P.sageDark}" stroke-width="0.5"/><line x1="40" y1="38" x2="40" y2="44" stroke="${P.sageDark}" stroke-width="0.5"/>` },
-  { name: "Bench", svg: `<rect x="10" y="32" width="40" height="6" rx="1" fill="${P.wood}"/><rect x="12" y="38" width="3" height="10" fill="${P.woodDark}"/><rect x="45" y="38" width="3" height="10" fill="${P.woodDark}"/>` },
-  // 31-40: sofas
-  { name: "Mini sofa", svg: `<rect x="10" y="30" width="40" height="14" rx="4" fill="${P.lilac}"/><rect x="14" y="22" width="32" height="14" rx="4" fill="${P.lilacDark}"/><rect x="10" y="30" width="8" height="14" rx="3" fill="${P.lilacDark}"/><rect x="42" y="30" width="8" height="14" rx="3" fill="${P.lilacDark}"/>` },
-  { name: "Loveseat", svg: `<rect x="8" y="28" width="44" height="16" rx="4" fill="${P.peach}"/><rect x="12" y="20" width="36" height="14" rx="4" fill="${P.peachDark}"/><rect x="14" y="34" width="14" height="6" rx="2" fill="${P.cream}"/><rect x="32" y="34" width="14" height="6" rx="2" fill="${P.cream}"/>` },
-  { name: "Modular sofa", svg: `<rect x="6" y="30" width="48" height="14" rx="3" fill="${P.sage}"/><rect x="10" y="22" width="40" height="12" rx="3" fill="${P.sageDark}"/><rect x="6" y="30" width="14" height="14" rx="3" fill="${P.sageDark}"/>` },
-  { name: "Pink sofa", svg: `<rect x="8" y="30" width="44" height="14" rx="5" fill="${P.pink}"/><rect x="12" y="20" width="36" height="14" rx="4" fill="${P.pinkDark}"/><circle cx="20" cy="38" r="3" fill="${P.cream}"/><circle cx="40" cy="38" r="3" fill="${P.cream}"/>` },
-  { name: "Velvet sofa", svg: `<rect x="8" y="28" width="44" height="16" rx="3" fill="${P.lilacDark}"/><rect x="12" y="18" width="36" height="16" rx="3" fill="${P.lilac}"/><line x1="20" y1="20" x2="20" y2="32" stroke="${P.lilacDark}" stroke-width="0.5"/><line x1="30" y1="20" x2="30" y2="32" stroke="${P.lilacDark}" stroke-width="0.5"/><line x1="40" y1="20" x2="40" y2="32" stroke="${P.lilacDark}" stroke-width="0.5"/>` },
-  { name: "Chaise lounge", svg: `<rect x="6" y="32" width="48" height="10" rx="3" fill="${P.cream}"/><rect x="6" y="18" width="14" height="18" rx="3" fill="${P.creamDark}"/><rect x="8" y="42" width="2" height="6" fill="${P.wood}"/><rect x="50" y="42" width="2" height="6" fill="${P.wood}"/>` },
-  { name: "Bean sofa", svg: `<path d="M8 44 Q6 26, 22 24 L38 24 Q54 26, 52 44 Z" fill="${P.warm}"/><ellipse cx="20" cy="34" rx="6" ry="4" fill="${P.warmDark}"/><ellipse cx="40" cy="34" rx="6" ry="4" fill="${P.warmDark}"/>` },
-  { name: "Couch with pillows", svg: `<rect x="10" y="30" width="40" height="14" rx="3" fill="${P.sky}"/><rect x="14" y="22" width="32" height="12" rx="3" fill="${P.skyDark}"/><rect x="16" y="32" width="10" height="8" rx="2" fill="${P.pink}"/><rect x="34" y="32" width="10" height="8" rx="2" fill="${P.warm}"/>` },
-  { name: "Rattan sofa", svg: `<rect x="8" y="28" width="44" height="16" rx="3" fill="${P.cream}"/><rect x="12" y="20" width="36" height="14" rx="3" fill="${P.cream}"/><line x1="14" y1="22" x2="14" y2="42" stroke="${P.creamDark}" stroke-width="0.5"/><line x1="22" y1="22" x2="22" y2="42" stroke="${P.creamDark}" stroke-width="0.5"/><line x1="30" y1="22" x2="30" y2="42" stroke="${P.creamDark}" stroke-width="0.5"/><line x1="38" y1="22" x2="38" y2="42" stroke="${P.creamDark}" stroke-width="0.5"/><line x1="46" y1="22" x2="46" y2="42" stroke="${P.creamDark}" stroke-width="0.5"/>` },
-  { name: "Cloud sofa", svg: `<path d="M8 42 Q4 32, 14 30 Q16 22, 26 26 Q32 20, 40 26 Q52 24, 52 38 Q52 46, 40 44 Q30 48, 20 44 Q10 46, 8 42 Z" fill="${P.cream}"/>` },
-  // 41-50: tables/desks
-  { name: "Coffee table", svg: `<ellipse cx="30" cy="32" rx="20" ry="5" fill="${P.wood}"/><ellipse cx="30" cy="32" rx="20" ry="5" fill="${P.woodDark}" opacity="0.3"/><rect x="14" y="32" width="3" height="14" fill="${P.woodDark}"/><rect x="43" y="32" width="3" height="14" fill="${P.woodDark}"/>` },
-  { name: "Side table", svg: `<rect x="18" y="22" width="24" height="4" rx="1" fill="${P.wood}"/><rect x="20" y="26" width="3" height="22" fill="${P.woodDark}"/><rect x="37" y="26" width="3" height="22" fill="${P.woodDark}"/><rect x="18" y="38" width="24" height="2" fill="${P.woodDark}"/>` },
-  { name: "Desk", svg: `<rect x="6" y="22" width="48" height="5" fill="${P.wood}"/><rect x="8" y="27" width="3" height="21" fill="${P.woodDark}"/><rect x="49" y="27" width="3" height="21" fill="${P.woodDark}"/><rect x="38" y="27" width="14" height="12" fill="${P.creamDark}"/><line x1="38" y1="33" x2="52" y2="33" stroke="${P.wood}" stroke-width="0.5"/>` },
-  { name: "Round table", svg: `<ellipse cx="30" cy="22" rx="18" ry="5" fill="${P.cream}"/><ellipse cx="30" cy="22" rx="18" ry="5" fill="${P.creamDark}" opacity="0.2"/><rect x="28" y="22" width="4" height="22" fill="${P.creamDark}"/><ellipse cx="30" cy="46" rx="8" ry="2" fill="${P.creamDark}"/>` },
-  { name: "Dining table", svg: `<rect x="6" y="26" width="48" height="4" rx="1" fill="${P.wood}"/><rect x="10" y="30" width="3" height="18" fill="${P.woodDark}"/><rect x="47" y="30" width="3" height="18" fill="${P.woodDark}"/>` },
-  { name: "Console table", svg: `<rect x="8" y="22" width="44" height="3" fill="${P.dark}"/><rect x="10" y="25" width="2" height="23" fill="${P.dark}"/><rect x="48" y="25" width="2" height="23" fill="${P.dark}"/><line x1="12" y1="36" x2="48" y2="36" stroke="${P.dark}" stroke-width="1"/>` },
-  { name: "Nightstand", svg: `<rect x="18" y="22" width="24" height="26" rx="2" fill="${P.wood}"/><rect x="22" y="28" width="16" height="6" rx="1" fill="${P.woodDark}"/><rect x="22" y="36" width="16" height="6" rx="1" fill="${P.woodDark}"/><circle cx="30" cy="31" r="1" fill="${P.cream}"/><circle cx="30" cy="39" r="1" fill="${P.cream}"/>` },
-  { name: "Glass table", svg: `<rect x="10" y="24" width="40" height="3" rx="1" fill="${P.sky}" opacity="0.6"/><rect x="10" y="24" width="40" height="3" rx="1" fill="none" stroke="${P.skyDark}" stroke-width="0.5"/><rect x="12" y="27" width="2" height="21" fill="${P.greyDark}"/><rect x="46" y="27" width="2" height="21" fill="${P.greyDark}"/>` },
-  { name: "Tea table", svg: `<rect x="14" y="26" width="32" height="4" rx="6" fill="${P.peach}"/><rect x="22" y="30" width="3" height="16" fill="${P.peachDark}"/><rect x="35" y="30" width="3" height="16" fill="${P.peachDark}"/><circle cx="30" cy="26" r="2" fill="${P.cream}"/>` },
-  { name: "Standing desk", svg: `<rect x="8" y="20" width="44" height="4" fill="${P.cream}"/><rect x="28" y="24" width="4" height="22" fill="${P.greyDark}"/><rect x="20" y="46" width="20" height="3" fill="${P.greyDark}"/>` },
-  // 51-60: beds & bedroom
-  { name: "Single bed", svg: `<rect x="8" y="22" width="44" height="20" rx="2" fill="${P.cream}"/><rect x="8" y="22" width="44" height="6" rx="2" fill="${P.lilac}"/><rect x="10" y="20" width="40" height="4" rx="1" fill="${P.lilacDark}"/><rect x="14" y="24" width="14" height="6" rx="2" fill="${P.cream}"/>` },
-  { name: "Double bed", svg: `<rect x="6" y="20" width="48" height="24" rx="3" fill="${P.peach}"/><rect x="6" y="20" width="48" height="8" rx="2" fill="${P.peachDark}"/><rect x="10" y="14" width="40" height="8" rx="2" fill="${P.peachDark}"/><rect x="12" y="22" width="14" height="8" rx="2" fill="${P.cream}"/><rect x="34" y="22" width="14" height="8" rx="2" fill="${P.cream}"/>` },
-  { name: "Bunk bed", svg: `<rect x="10" y="14" width="40" height="10" rx="2" fill="${P.sky}"/><rect x="10" y="34" width="40" height="10" rx="2" fill="${P.skyDark}"/><rect x="10" y="14" width="3" height="32" fill="${P.greyDark}"/><rect x="47" y="14" width="3" height="32" fill="${P.greyDark}"/>` },
-  { name: "Canopy bed", svg: `<rect x="10" y="14" width="40" height="2" fill="${P.dark}"/><rect x="10" y="14" width="2" height="30" fill="${P.dark}"/><rect x="48" y="14" width="2" height="30" fill="${P.dark}"/><rect x="12" y="28" width="36" height="16" rx="2" fill="${P.pink}"/><rect x="14" y="30" width="14" height="6" rx="2" fill="${P.cream}"/>` },
-  { name: "Floor mattress", svg: `<rect x="8" y="32" width="44" height="14" rx="3" fill="${P.cream}"/><rect x="12" y="34" width="14" height="6" rx="2" fill="${P.pink}"/><rect x="32" y="34" width="14" height="6" rx="2" fill="${P.pink}"/>` },
-  { name: "Pillow stack", svg: `<rect x="14" y="36" width="32" height="10" rx="4" fill="${P.lilac}"/><rect x="16" y="28" width="28" height="10" rx="4" fill="${P.pink}"/><rect x="18" y="20" width="24" height="10" rx="4" fill="${P.cream}"/>` },
-  { name: "Blanket", svg: `<path d="M10 44 Q14 30, 30 28 Q46 30, 50 44 Z" fill="${P.warm}"/><path d="M14 40 Q14 36, 18 36" stroke="${P.warmDark}" stroke-width="1" fill="none"/><path d="M22 36 Q22 32, 26 32" stroke="${P.warmDark}" stroke-width="1" fill="none"/><path d="M34 32 Q34 28, 38 28" stroke="${P.warmDark}" stroke-width="1" fill="none"/>` },
-  { name: "Dresser", svg: `<rect x="14" y="14" width="32" height="34" rx="2" fill="${P.wood}"/><rect x="16" y="18" width="28" height="8" rx="1" fill="${P.woodDark}"/><rect x="16" y="28" width="28" height="8" rx="1" fill="${P.woodDark}"/><rect x="16" y="38" width="28" height="8" rx="1" fill="${P.woodDark}"/><circle cx="30" cy="22" r="1" fill="${P.cream}"/><circle cx="30" cy="32" r="1" fill="${P.cream}"/><circle cx="30" cy="42" r="1" fill="${P.cream}"/>` },
-  { name: "Wardrobe", svg: `<rect x="14" y="10" width="32" height="38" rx="2" fill="${P.woodDark}"/><line x1="30" y1="10" x2="30" y2="48" stroke="${P.dark}" stroke-width="1"/><circle cx="26" cy="28" r="1.5" fill="${P.cream}"/><circle cx="34" cy="28" r="1.5" fill="${P.cream}"/>` },
-  { name: "Bedside rug", svg: `<ellipse cx="30" cy="36" rx="22" ry="8" fill="${P.pink}"/><ellipse cx="30" cy="36" rx="16" ry="5" fill="${P.pinkDark}" opacity="0.3"/>` },
-  // 61-70: rugs and floor decor
-  { name: "Round rug", svg: `<circle cx="30" cy="34" r="20" fill="${P.warm}"/><circle cx="30" cy="34" r="14" fill="${P.warmDark}" opacity="0.4"/><circle cx="30" cy="34" r="8" fill="${P.cream}"/>` },
-  { name: "Striped rug", svg: `<rect x="8" y="22" width="44" height="22" rx="2" fill="${P.cream}"/><rect x="8" y="22" width="44" height="4" fill="${P.pink}"/><rect x="8" y="30" width="44" height="4" fill="${P.lilac}"/><rect x="8" y="38" width="44" height="4" fill="${P.sage}"/>` },
-  { name: "Persian rug", svg: `<rect x="6" y="22" width="48" height="22" rx="1" fill="${P.coral || "#D85A30"}"/><rect x="10" y="26" width="40" height="14" fill="${P.warm}" opacity="0.4"/><rect x="14" y="30" width="32" height="6" fill="${P.coral || "#D85A30"}" opacity="0.7"/><circle cx="30" cy="33" r="3" fill="${P.cream}"/>` },
-  { name: "Patterned rug", svg: `<rect x="6" y="24" width="48" height="20" rx="2" fill="${P.sage}"/><circle cx="18" cy="34" r="3" fill="${P.cream}"/><circle cx="30" cy="34" r="3" fill="${P.cream}"/><circle cx="42" cy="34" r="3" fill="${P.cream}"/>` },
-  { name: "Sheepskin rug", svg: `<path d="M10 32 Q8 22, 20 22 Q24 18, 30 22 Q36 18, 40 22 Q52 22, 50 32 Q52 42, 40 44 Q36 48, 30 44 Q24 48, 20 44 Q8 42, 10 32 Z" fill="${P.cream}"/>` },
-  { name: "Tatami mat", svg: `<rect x="8" y="22" width="44" height="22" rx="1" fill="${P.warm}"/><rect x="8" y="22" width="44" height="22" rx="1" fill="none" stroke="${P.warmDark}" stroke-width="1"/><line x1="30" y1="22" x2="30" y2="44" stroke="${P.warmDark}" stroke-width="0.5"/>` },
-  { name: "Floor cushion", svg: `<rect x="14" y="28" width="32" height="14" rx="4" fill="${P.lilac}"/><circle cx="22" cy="35" r="1" fill="${P.lilacDark}"/><circle cx="38" cy="35" r="1" fill="${P.lilacDark}"/>` },
-  { name: "Mosaic rug", svg: `<rect x="8" y="24" width="44" height="20" rx="2" fill="${P.cream}"/><rect x="12" y="28" width="6" height="6" fill="${P.pink}"/><rect x="22" y="28" width="6" height="6" fill="${P.sage}"/><rect x="32" y="28" width="6" height="6" fill="${P.warm}"/><rect x="42" y="28" width="6" height="6" fill="${P.sky}"/><rect x="12" y="36" width="6" height="6" fill="${P.sage}"/><rect x="22" y="36" width="6" height="6" fill="${P.warm}"/><rect x="32" y="36" width="6" height="6" fill="${P.sky}"/><rect x="42" y="36" width="6" height="6" fill="${P.pink}"/>` },
-  { name: "Doormat", svg: `<rect x="14" y="32" width="32" height="10" rx="1" fill="${P.woodDark}"/><line x1="18" y1="32" x2="18" y2="42" stroke="${P.dark}" stroke-width="0.5"/><line x1="26" y1="32" x2="26" y2="42" stroke="${P.dark}" stroke-width="0.5"/><line x1="34" y1="32" x2="34" y2="42" stroke="${P.dark}" stroke-width="0.5"/><line x1="42" y1="32" x2="42" y2="42" stroke="${P.dark}" stroke-width="0.5"/>` },
-  { name: "Yoga mat", svg: `<rect x="12" y="36" width="36" height="6" rx="3" fill="${P.sageDark}"/><rect x="46" y="34" width="4" height="10" rx="2" fill="${P.sage}"/>` },
-  // 71-80: shelves, storage, books
-  { name: "Bookshelf", svg: `<rect x="14" y="10" width="32" height="38" rx="1" fill="${P.wood}"/><rect x="14" y="22" width="32" height="2" fill="${P.woodDark}"/><rect x="14" y="34" width="32" height="2" fill="${P.woodDark}"/><rect x="16" y="12" width="3" height="10" fill="${P.coral || "#D85A30"}"/><rect x="20" y="12" width="3" height="10" fill="${P.sky}"/><rect x="24" y="14" width="3" height="8" fill="${P.warm}"/><rect x="16" y="24" width="3" height="10" fill="${P.sage}"/><rect x="20" y="26" width="3" height="8" fill="${P.pink}"/><rect x="16" y="36" width="3" height="10" fill="${P.lilac}"/><rect x="20" y="36" width="3" height="10" fill="${P.warm}"/>` },
-  { name: "Floating shelf", svg: `<rect x="8" y="24" width="44" height="3" fill="${P.wood}"/><rect x="8" y="36" width="44" height="3" fill="${P.wood}"/><rect x="12" y="14" width="3" height="10" fill="${P.coral || "#D85A30"}"/><rect x="16" y="16" width="3" height="8" fill="${P.sage}"/><rect x="20" y="14" width="3" height="10" fill="${P.warm}"/><circle cx="36" cy="20" r="3" fill="${P.leaf}"/><rect x="34" y="22" width="4" height="2" fill="${P.pot}"/>` },
-  { name: "Stacked books", svg: `<rect x="14" y="36" width="32" height="6" rx="1" fill="${P.coral || "#D85A30"}"/><rect x="16" y="30" width="28" height="6" rx="1" fill="${P.warm}"/><rect x="18" y="24" width="24" height="6" rx="1" fill="${P.sage}"/><rect x="20" y="18" width="20" height="6" rx="1" fill="${P.sky}"/>` },
-  { name: "Open book", svg: `<path d="M10 26 Q20 22, 30 26 Q40 22, 50 26 L50 42 Q40 38, 30 42 Q20 38, 10 42 Z" fill="${P.cream}"/><line x1="30" y1="26" x2="30" y2="42" stroke="${P.creamDark}" stroke-width="1"/><line x1="14" y1="30" x2="26" y2="30" stroke="${P.creamDark}" stroke-width="0.5"/><line x1="14" y1="34" x2="26" y2="34" stroke="${P.creamDark}" stroke-width="0.5"/><line x1="34" y1="30" x2="46" y2="30" stroke="${P.creamDark}" stroke-width="0.5"/><line x1="34" y1="34" x2="46" y2="34" stroke="${P.creamDark}" stroke-width="0.5"/>` },
-  { name: "Storage basket", svg: `<path d="M14 26 L46 26 L42 46 L18 46 Z" fill="${P.warm}"/><path d="M14 26 L46 26 L42 46 L18 46 Z" fill="none" stroke="${P.warmDark}" stroke-width="1"/><line x1="22" y1="28" x2="20" y2="44" stroke="${P.warmDark}" stroke-width="0.5"/><line x1="30" y1="28" x2="30" y2="44" stroke="${P.warmDark}" stroke-width="0.5"/><line x1="38" y1="28" x2="40" y2="44" stroke="${P.warmDark}" stroke-width="0.5"/>` },
-  { name: "Wooden chest", svg: `<rect x="10" y="26" width="40" height="20" rx="1" fill="${P.wood}"/><path d="M10 26 Q30 16, 50 26 Z" fill="${P.woodDark}"/><rect x="26" y="32" width="8" height="6" fill="${P.dark}"/><circle cx="30" cy="35" r="1" fill="${P.warm}"/>` },
-  { name: "Filing cabinet", svg: `<rect x="18" y="10" width="24" height="38" rx="1" fill="${P.greyDark}"/><line x1="18" y1="22" x2="42" y2="22" stroke="${P.dark}" stroke-width="0.5"/><line x1="18" y1="34" x2="42" y2="34" stroke="${P.dark}" stroke-width="0.5"/><circle cx="30" cy="16" r="1" fill="${P.cream}"/><circle cx="30" cy="28" r="1" fill="${P.cream}"/><circle cx="30" cy="40" r="1" fill="${P.cream}"/>` },
-  { name: "Vintage trunk", svg: `<rect x="10" y="24" width="40" height="22" rx="1" fill="${P.woodDark}"/><rect x="10" y="24" width="40" height="4" fill="${P.dark}"/><rect x="10" y="40" width="40" height="2" fill="${P.dark}"/><rect x="26" y="32" width="8" height="6" fill="${P.warm}"/>` },
-  { name: "Crate", svg: `<rect x="14" y="22" width="32" height="24" rx="1" fill="${P.wood}"/><line x1="14" y1="28" x2="46" y2="28" stroke="${P.woodDark}" stroke-width="1"/><line x1="14" y1="40" x2="46" y2="40" stroke="${P.woodDark}" stroke-width="1"/><line x1="22" y1="22" x2="22" y2="46" stroke="${P.woodDark}" stroke-width="0.5"/><line x1="30" y1="22" x2="30" y2="46" stroke="${P.woodDark}" stroke-width="0.5"/><line x1="38" y1="22" x2="38" y2="46" stroke="${P.woodDark}" stroke-width="0.5"/>` },
-  { name: "Hanging shelf", svg: `<rect x="12" y="14" width="2" height="14" fill="${P.dark}"/><rect x="46" y="14" width="2" height="14" fill="${P.dark}"/><rect x="10" y="28" width="40" height="3" fill="${P.wood}"/><rect x="10" y="40" width="40" height="3" fill="${P.wood}"/><circle cx="20" cy="36" r="3" fill="${P.leaf}"/><rect x="30" y="32" width="4" height="8" fill="${P.coral || "#D85A30"}"/><rect x="38" y="34" width="6" height="6" rx="1" fill="${P.cream}"/>` },
-  // 81-90: decor
-  { name: "Wall clock", svg: `<circle cx="30" cy="30" r="16" fill="${P.cream}"/><circle cx="30" cy="30" r="16" fill="none" stroke="${P.woodDark}" stroke-width="2"/><line x1="30" y1="30" x2="30" y2="20" stroke="${P.dark}" stroke-width="1.5"/><line x1="30" y1="30" x2="38" y2="30" stroke="${P.dark}" stroke-width="1.5"/><circle cx="30" cy="30" r="1.5" fill="${P.dark}"/>` },
-  { name: "Framed painting", svg: `<rect x="14" y="14" width="32" height="32" rx="1" fill="${P.woodDark}"/><rect x="17" y="17" width="26" height="26" fill="${P.sky}"/><circle cx="36" cy="22" r="3" fill="${P.warm}"/><path d="M17 36 Q22 30, 28 33 Q35 28, 43 34 L43 43 L17 43 Z" fill="${P.sage}"/>` },
-  { name: "Mirror", svg: `<rect x="20" y="10" width="20" height="40" rx="10" fill="${P.greyDark}"/><rect x="22" y="12" width="16" height="36" rx="8" fill="${P.sky}" opacity="0.5"/><rect x="22" y="12" width="16" height="36" rx="8" fill="none" stroke="${P.greyDark}" stroke-width="1"/>` },
-  { name: "Vase with flowers", svg: `<path d="M22 30 L22 46 L38 46 L38 30 Q34 28, 30 30 Q26 28, 22 30 Z" fill="${P.sky}"/><rect x="29" y="14" width="2" height="16" fill="${P.leafDark}"/><circle cx="30" cy="14" r="4" fill="${P.pink}"/><circle cx="26" cy="20" r="3" fill="${P.warm}"/><circle cx="34" cy="22" r="3" fill="${P.lilac}"/>` },
-  { name: "Candles trio", svg: `<rect x="14" y="36" width="32" height="6" rx="1" fill="${P.warm}"/><rect x="18" y="22" width="4" height="14" fill="${P.cream}"/><rect x="28" y="18" width="4" height="18" fill="${P.cream}"/><rect x="38" y="24" width="4" height="12" fill="${P.cream}"/><path d="M20 18 Q19 21, 20 22" stroke="${P.warmDark}" stroke-width="1" fill="none"/><path d="M30 14 Q29 17, 30 18" stroke="${P.warmDark}" stroke-width="1" fill="none"/><path d="M40 20 Q39 23, 40 24" stroke="${P.warmDark}" stroke-width="1" fill="none"/>` },
-  { name: "Globe", svg: `<rect x="22" y="42" width="16" height="4" rx="1" fill="${P.wood}"/><rect x="29" y="38" width="2" height="6" fill="${P.dark}"/><circle cx="30" cy="26" r="14" fill="${P.sky}"/><path d="M18 24 Q26 22, 34 26 Q40 30, 42 28" stroke="${P.sage}" stroke-width="1.5" fill="none"/><path d="M20 30 Q28 30, 36 28" stroke="${P.sage}" stroke-width="1.5" fill="none"/><circle cx="22" cy="22" r="2" fill="${P.sage}"/>` },
-  { name: "Picture frame", svg: `<rect x="14" y="14" width="32" height="32" rx="1" fill="${P.cream}"/><rect x="14" y="14" width="32" height="32" rx="1" fill="none" stroke="${P.woodDark}" stroke-width="3"/><circle cx="30" cy="26" r="4" fill="${P.peach}"/><rect x="24" y="32" width="12" height="8" rx="3" fill="${P.lilac}"/>` },
-  { name: "Wall tapestry", svg: `<rect x="12" y="12" width="36" height="32" fill="${P.warm}"/><rect x="14" y="14" width="32" height="2" fill="${P.dark}"/><rect x="14" y="42" width="32" height="2" fill="${P.dark}"/><path d="M16 18 L28 30 L40 18 L40 38 L16 38 Z" fill="${P.coral || "#D85A30"}" opacity="0.6"/><circle cx="30" cy="28" r="4" fill="${P.cream}"/>` },
-  { name: "Wind chimes", svg: `<rect x="14" y="14" width="32" height="2" rx="1" fill="${P.wood}"/><line x1="20" y1="16" x2="20" y2="28" stroke="${P.dark}" stroke-width="0.5"/><line x1="26" y1="16" x2="26" y2="32" stroke="${P.dark}" stroke-width="0.5"/><line x1="34" y1="16" x2="34" y2="32" stroke="${P.dark}" stroke-width="0.5"/><line x1="40" y1="16" x2="40" y2="28" stroke="${P.dark}" stroke-width="0.5"/><rect x="19" y="28" width="2" height="10" rx="1" fill="${P.warm}"/><rect x="25" y="32" width="2" height="14" rx="1" fill="${P.peach}"/><rect x="33" y="32" width="2" height="12" rx="1" fill="${P.pink}"/><rect x="39" y="28" width="2" height="8" rx="1" fill="${P.lilac}"/>` },
-  { name: "Calendar", svg: `<rect x="14" y="14" width="32" height="32" rx="2" fill="${P.cream}"/><rect x="14" y="14" width="32" height="8" rx="2" fill="${P.coral || "#D85A30"}"/><rect x="14" y="20" width="32" height="2" fill="${P.coral || "#D85A30"}"/><text x="30" y="38" fill="${P.dark}" font-size="14" text-anchor="middle" font-family="sans-serif" font-weight="bold">15</text>` },
-  // 91-100: special / cute
-  { name: "Aquarium", svg: `<rect x="10" y="20" width="40" height="22" rx="2" fill="${P.sky}" opacity="0.5"/><rect x="10" y="20" width="40" height="22" rx="2" fill="none" stroke="${P.skyDark}" stroke-width="1.5"/><rect x="10" y="38" width="40" height="4" fill="${P.warm}"/><circle cx="20" cy="28" r="2" fill="${P.coral || "#D85A30"}"/><path d="M22 28 L26 26 L26 30 Z" fill="${P.coral || "#D85A30"}"/><circle cx="36" cy="32" r="1.5" fill="${P.warm}"/><path d="M37 32 L40 31 L40 33 Z" fill="${P.warm}"/><path d="M14 38 Q14 30, 18 32" stroke="${P.leafDark}" stroke-width="1.5" fill="none"/><path d="M44 38 Q44 30, 40 32" stroke="${P.leafDark}" stroke-width="1.5" fill="none"/>` },
-  { name: "Cat bed", svg: `<ellipse cx="30" cy="38" rx="22" ry="6" fill="${P.cream}"/><ellipse cx="30" cy="36" rx="20" ry="5" fill="${P.creamDark}"/><circle cx="26" cy="32" r="5" fill="${P.greyDark}"/><circle cx="24" cy="30" r="1" fill="${P.dark}"/><circle cx="28" cy="30" r="1" fill="${P.dark}"/><path d="M23 28 L21 25 L25 27 Z" fill="${P.greyDark}"/><path d="M29 28 L31 25 L27 27 Z" fill="${P.greyDark}"/>` },
-  { name: "Tea set", svg: `<rect x="10" y="38" width="40" height="6" rx="1" fill="${P.wood}"/><path d="M16 28 Q14 28, 14 32 L14 38 L26 38 L26 32 Q26 28, 24 28 Z" fill="${P.cream}"/><path d="M26 32 Q30 32, 30 34 Q30 36, 26 36" stroke="${P.cream}" stroke-width="1.5" fill="none"/><rect x="34" y="32" width="8" height="6" rx="1" fill="${P.cream}"/><rect x="42" y="34" width="2" height="3" fill="${P.cream}"/>` },
-  { name: "Record player", svg: `<rect x="10" y="26" width="40" height="18" rx="2" fill="${P.wood}"/><circle cx="24" cy="35" r="7" fill="${P.dark}"/><circle cx="24" cy="35" r="2" fill="${P.coral || "#D85A30"}"/><rect x="34" y="30" width="14" height="3" rx="1" fill="${P.dark}"/><circle cx="44" cy="38" r="2" fill="${P.greyDark}"/>` },
-  { name: "Guitar", svg: `<rect x="22" y="10" width="3" height="20" fill="${P.woodDark}"/><circle cx="24" cy="38" r="10" fill="${P.warm}"/><circle cx="24" cy="38" r="3" fill="${P.dark}"/><rect x="22" y="8" width="3" height="3" fill="${P.dark}"/>` },
-  { name: "Easel", svg: `<line x1="20" y1="46" x2="28" y2="14" stroke="${P.wood}" stroke-width="2"/><line x1="40" y1="46" x2="32" y2="14" stroke="${P.wood}" stroke-width="2"/><line x1="30" y1="46" x2="30" y2="30" stroke="${P.wood}" stroke-width="1.5"/><rect x="18" y="20" width="24" height="18" fill="${P.cream}"/><circle cx="26" cy="26" r="2" fill="${P.coral || "#D85A30"}"/><circle cx="34" cy="30" r="3" fill="${P.sage}"/>` },
-  { name: "Birdcage", svg: `<rect x="22" y="44" width="16" height="4" rx="1" fill="${P.dark}"/><path d="M18 44 Q16 24, 30 18 Q44 24, 42 44 Z" fill="none" stroke="${P.dark}" stroke-width="1"/><line x1="22" y1="22" x2="22" y2="44" stroke="${P.dark}" stroke-width="0.5"/><line x1="30" y1="18" x2="30" y2="44" stroke="${P.dark}" stroke-width="0.5"/><line x1="38" y1="22" x2="38" y2="44" stroke="${P.dark}" stroke-width="0.5"/><ellipse cx="30" cy="34" rx="4" ry="3" fill="${P.warm}"/><circle cx="32" cy="33" r="0.5" fill="${P.dark}"/>` },
-  { name: "Fireplace", svg: `<rect x="10" y="20" width="40" height="26" fill="${P.dark}"/><rect x="14" y="24" width="32" height="18" fill="${P.warm}"/><path d="M22 42 Q24 32, 28 36 Q30 28, 32 36 Q36 32, 38 42 Z" fill="${P.coral || "#D85A30"}"/><rect x="10" y="18" width="40" height="4" fill="${P.woodDark}"/>` },
-  { name: "Crystal cluster", svg: `<path d="M22 46 L24 26 L30 14 L36 26 L38 46 Z" fill="${P.lilac}"/><path d="M24 26 L30 30 L36 26" stroke="${P.lilacDark}" stroke-width="1" fill="none"/><path d="M30 14 L30 46" stroke="${P.lilacDark}" stroke-width="0.5"/><path d="M16 46 L20 32 L24 26" fill="${P.pink}"/><path d="M44 46 L40 32 L36 26" fill="${P.pink}"/>` },
-  { name: "Golden trophy", svg: `<rect x="24" y="40" width="12" height="6" rx="1" fill="${P.woodDark}"/><rect x="22" y="38" width="16" height="3" fill="${P.warmDark}"/><path d="M24 18 L36 18 L34 36 L26 36 Z" fill="${P.warm}"/><path d="M20 22 Q16 24, 20 30 L24 30" fill="none" stroke="${P.warmDark}" stroke-width="2"/><path d="M40 22 Q44 24, 40 30 L36 30" fill="none" stroke="${P.warmDark}" stroke-width="2"/><text x="30" y="32" fill="${P.warmDark}" font-size="8" text-anchor="middle" font-family="sans-serif" font-weight="bold">★</text>` },
+// ============ FURNITURE (100 items, level-gated) ============
+// Each item: name + an SVG renderer. Minimalist cute, same palette as app.
+// We define 20 base archetypes and scale up to 100 by colour variations.
+const FURN_NAMES = [
+  "Cushion","Plant","Lamp","Bookshelf","Rug","Cat","Clock","Painting","Chair","Table",
+  "Window","Mug","Candle","Plushie","Bed","Mirror","Vase","Stool","Curtain","Mushroom"
 ];
+const FURN_PALETTE = ["purple","teal","coral","amber","green","pink","sky"]; // 7 hues for variety
  
-function Furniture({ furnId, size=60 }) {
-  const f = FURNITURE[furnId-1];
-  if (!f) return null;
-  return <svg width={size} height={size} viewBox="0 0 60 60" dangerouslySetInnerHTML={{__html: f.svg}}/>;
+function furnitureFor(level){
+  // 100 levels => name index = (level-1) % 20, palette = floor((level-1)/20) cycles through colours
+  const nameIdx = (level-1) % FURN_NAMES.length;
+  const tier = Math.floor((level-1) / FURN_NAMES.length); // 0..4 (5 tiers)
+  const palette = FURN_PALETTE[(nameIdx + tier*3) % FURN_PALETTE.length];
+  const tierLabels = ["","II","III","IV","V"];
+  const name = FURN_NAMES[nameIdx] + (tier>0?` ${tierLabels[tier]}`:"");
+  return { name, palette, archetype: FURN_NAMES[nameIdx], tier };
 }
  
-// ---------- shared UI components ----------
+function FurnSVG({ level, size=48 }) {
+  const { archetype, palette, tier } = furnitureFor(level);
+  const c = COLORS[palette];
+  const stroke = c.text;
+  const fill = c.bg;
+  const accent = c.mid;
+  const border = c.border;
+  // Each archetype: a cute minimal SVG inside 64x64
+  let body;
+  switch(archetype){
+    case "Cushion": body = <>
+      <rect x="10" y="22" width="44" height="28" rx="10" fill={fill} stroke={stroke} strokeWidth="1.5"/>
+      <circle cx="32" cy="36" r="3" fill={accent}/>
+    </>; break;
+    case "Plant": body = <>
+      <path d="M32 44 Q22 28 18 18 Q26 22 32 32 Q38 22 46 18 Q42 28 32 44 Z" fill={accent} stroke={stroke} strokeWidth="1.2"/>
+      <path d="M22 44 L42 44 L40 56 L24 56 Z" fill={fill} stroke={stroke} strokeWidth="1.5"/>
+    </>; break;
+    case "Lamp": body = <>
+      <path d="M20 16 L44 16 L40 32 L24 32 Z" fill={fill} stroke={stroke} strokeWidth="1.5"/>
+      <line x1="32" y1="32" x2="32" y2="50" stroke={stroke} strokeWidth="1.5"/>
+      <ellipse cx="32" cy="52" rx="10" ry="3" fill={accent} stroke={stroke} strokeWidth="1.2"/>
+    </>; break;
+    case "Bookshelf": body = <>
+      <rect x="14" y="12" width="36" height="40" rx="3" fill={fill} stroke={stroke} strokeWidth="1.5"/>
+      <line x1="14" y1="26" x2="50" y2="26" stroke={stroke} strokeWidth="1"/>
+      <line x1="14" y1="38" x2="50" y2="38" stroke={stroke} strokeWidth="1"/>
+      <rect x="18" y="16" width="4" height="9" fill={accent}/>
+      <rect x="24" y="14" width="4" height="11" fill={border}/>
+      <rect x="30" y="16" width="4" height="9" fill={accent}/>
+    </>; break;
+    case "Rug": body = <>
+      <ellipse cx="32" cy="36" rx="22" ry="10" fill={fill} stroke={stroke} strokeWidth="1.5"/>
+      <ellipse cx="32" cy="36" rx="14" ry="6" fill="none" stroke={accent} strokeWidth="1.2"/>
+    </>; break;
+    case "Cat": body = <>
+      <ellipse cx="32" cy="42" rx="14" ry="12" fill={fill} stroke={stroke} strokeWidth="1.5"/>
+      <path d="M20 32 L24 22 L28 30 Z" fill={fill} stroke={stroke} strokeWidth="1.5"/>
+      <path d="M36 30 L40 22 L44 32 Z" fill={fill} stroke={stroke} strokeWidth="1.5"/>
+      <circle cx="27" cy="40" r="1.5" fill={stroke}/>
+      <circle cx="37" cy="40" r="1.5" fill={stroke}/>
+      <path d="M30 44 Q32 46 34 44" stroke={stroke} strokeWidth="1.2" fill="none"/>
+    </>; break;
+    case "Clock": body = <>
+      <circle cx="32" cy="32" r="18" fill={fill} stroke={stroke} strokeWidth="1.5"/>
+      <line x1="32" y1="32" x2="32" y2="20" stroke={stroke} strokeWidth="1.5"/>
+      <line x1="32" y1="32" x2="40" y2="34" stroke={accent} strokeWidth="1.5"/>
+      <circle cx="32" cy="32" r="1.5" fill={stroke}/>
+    </>; break;
+    case "Painting": body = <>
+      <rect x="14" y="14" width="36" height="28" rx="2" fill={fill} stroke={stroke} strokeWidth="1.5"/>
+      <circle cx="40" cy="22" r="3" fill={accent}/>
+      <path d="M16 38 L24 28 L32 34 L40 26 L48 38 Z" fill={border}/>
+    </>; break;
+    case "Chair": body = <>
+      <rect x="18" y="12" width="24" height="28" rx="4" fill={fill} stroke={stroke} strokeWidth="1.5"/>
+      <rect x="18" y="36" width="24" height="6" rx="2" fill={accent} stroke={stroke} strokeWidth="1.2"/>
+      <line x1="22" y1="42" x2="22" y2="54" stroke={stroke} strokeWidth="1.5"/>
+      <line x1="38" y1="42" x2="38" y2="54" stroke={stroke} strokeWidth="1.5"/>
+    </>; break;
+    case "Table": body = <>
+      <ellipse cx="32" cy="26" rx="22" ry="6" fill={fill} stroke={stroke} strokeWidth="1.5"/>
+      <line x1="16" y1="28" x2="18" y2="52" stroke={stroke} strokeWidth="1.5"/>
+      <line x1="48" y1="28" x2="46" y2="52" stroke={stroke} strokeWidth="1.5"/>
+    </>; break;
+    case "Window": body = <>
+      <rect x="14" y="12" width="36" height="40" rx="3" fill={fill} stroke={stroke} strokeWidth="1.5"/>
+      <line x1="32" y1="12" x2="32" y2="52" stroke={stroke} strokeWidth="1.2"/>
+      <line x1="14" y1="32" x2="50" y2="32" stroke={stroke} strokeWidth="1.2"/>
+      <circle cx="44" cy="20" r="3" fill={accent}/>
+    </>; break;
+    case "Mug": body = <>
+      <path d="M20 22 L20 46 Q20 52 26 52 L36 52 Q42 52 42 46 L42 22 Z" fill={fill} stroke={stroke} strokeWidth="1.5"/>
+      <path d="M42 28 Q50 28 50 36 Q50 44 42 44" fill="none" stroke={stroke} strokeWidth="1.5"/>
+      <ellipse cx="31" cy="26" rx="9" ry="3" fill={accent}/>
+    </>; break;
+    case "Candle": body = <>
+      <rect x="24" y="26" width="16" height="22" rx="2" fill={fill} stroke={stroke} strokeWidth="1.5"/>
+      <path d="M32 26 Q28 20 32 14 Q36 20 32 26" fill={accent} stroke={stroke} strokeWidth="1.2"/>
+      <ellipse cx="32" cy="48" rx="10" ry="2" fill={border}/>
+    </>; break;
+    case "Plushie": body = <>
+      <circle cx="32" cy="36" r="14" fill={fill} stroke={stroke} strokeWidth="1.5"/>
+      <circle cx="22" cy="24" r="6" fill={fill} stroke={stroke} strokeWidth="1.5"/>
+      <circle cx="42" cy="24" r="6" fill={fill} stroke={stroke} strokeWidth="1.5"/>
+      <circle cx="27" cy="34" r="1.5" fill={stroke}/>
+      <circle cx="37" cy="34" r="1.5" fill={stroke}/>
+      <circle cx="32" cy="40" r="2" fill={accent}/>
+    </>; break;
+    case "Bed": body = <>
+      <rect x="10" y="30" width="44" height="18" rx="3" fill={fill} stroke={stroke} strokeWidth="1.5"/>
+      <rect x="14" y="20" width="14" height="14" rx="3" fill={accent} stroke={stroke} strokeWidth="1.2"/>
+      <line x1="10" y1="38" x2="54" y2="38" stroke={border} strokeWidth="1"/>
+    </>; break;
+    case "Mirror": body = <>
+      <ellipse cx="32" cy="32" rx="14" ry="20" fill={fill} stroke={stroke} strokeWidth="1.5"/>
+      <ellipse cx="32" cy="32" rx="10" ry="16" fill={border} opacity="0.5"/>
+      <ellipse cx="28" cy="24" rx="3" ry="5" fill="#fff" opacity="0.6"/>
+    </>; break;
+    case "Vase": body = <>
+      <path d="M22 18 L26 18 L24 28 Q18 32 18 42 Q18 52 32 52 Q46 52 46 42 Q46 32 40 28 L38 18 L42 18" fill={fill} stroke={stroke} strokeWidth="1.5"/>
+      <circle cx="32" cy="40" r="4" fill={accent}/>
+    </>; break;
+    case "Stool": body = <>
+      <ellipse cx="32" cy="28" rx="14" ry="4" fill={accent} stroke={stroke} strokeWidth="1.2"/>
+      <rect x="20" y="28" width="24" height="4" fill={fill} stroke={stroke} strokeWidth="1"/>
+      <line x1="22" y1="32" x2="20" y2="50" stroke={stroke} strokeWidth="1.5"/>
+      <line x1="42" y1="32" x2="44" y2="50" stroke={stroke} strokeWidth="1.5"/>
+    </>; break;
+    case "Curtain": body = <>
+      <rect x="14" y="14" width="36" height="4" rx="2" fill={stroke}/>
+      <path d="M16 18 Q14 36 18 50 M22 18 Q20 36 24 50 M28 18 Q26 36 30 50 M34 18 Q32 36 36 50 M40 18 Q38 36 42 50 M46 18 Q44 36 48 50" stroke={accent} strokeWidth="2" fill="none"/>
+      <path d="M14 50 L50 50" stroke={stroke} strokeWidth="1"/>
+    </>; break;
+    case "Mushroom": body = <>
+      <path d="M14 32 Q14 18 32 16 Q50 18 50 32 Z" fill={accent} stroke={stroke} strokeWidth="1.5"/>
+      <circle cx="22" cy="26" r="2.5" fill={fill}/>
+      <circle cx="32" cy="22" r="2" fill={fill}/>
+      <circle cx="42" cy="26" r="2.5" fill={fill}/>
+      <rect x="26" y="32" width="12" height="18" rx="2" fill={fill} stroke={stroke} strokeWidth="1.2"/>
+    </>; break;
+    default: body = <circle cx="32" cy="32" r="14" fill={fill} stroke={stroke}/>;
+  }
+  return <svg width={size} height={size} viewBox="0 0 64 64" style={{display:"block"}}>{body}</svg>;
+}
+ 
+// ============ ANTI-SPAM TRACKING ============
+// For one-shot daily actions (habit checks, todo completion, water goal reached):
+// Once XP awarded for an action key, awarding again is a no-op until unlock condition resets.
+// Uncheck/un-complete -> remove XP and remove the award key so re-check still won't double-award.
+// This is enforced by maintaining a Set of award keys in localStorage.
+ 
+function useAwards(){
+  const [awards,setAwards] = useState(()=>load("pd_awards",{}));
+  useEffect(()=>save("pd_awards",awards),[awards]);
+  function has(key){ return !!awards[key]; }
+  function add(key){ setAwards(a=>({...a,[key]:Date.now()})); }
+  function remove(key){ setAwards(a=>{ const n={...a}; delete n[key]; return n; }); }
+  return { has, add, remove, awards };
+}
+ 
+// ============ THEME / SETTINGS ============
+const ThemeCtx = React.createContext(null);
+function useTheme(){ return React.useContext(ThemeCtx); }
+ 
+// ============ UI PRIMITIVES ============
 function Badge({ cat }) {
   const c = COLORS[CAT_COLOR[cat] || "green"];
   return <span style={{ background:c.bg, color:c.text, border:`1px solid ${c.border}`, borderRadius:20, padding:"2px 10px", fontSize:12, fontWeight:500 }}>{cat}</span>;
 }
-function UrgencyBadge({ urg }) {
-  const u = URGENCY_BY_KEY[urg] || URGENCY_BY_KEY.medium;
-  const c = COLORS[u.color];
-  return <span style={{ background:c.bg, color:c.text, border:`1px solid ${c.border}`, borderRadius:20, padding:"2px 10px", fontSize:12, fontWeight:500 }}>{u.label}</span>;
+function UrgencyBadge({ u }) {
+  const c = COLORS[URGENCY_COLOR[u] || "green"];
+  return <span style={{ background:c.bg, color:c.text, border:`1px solid ${c.border}`, borderRadius:20, padding:"2px 10px", fontSize:11, fontWeight:500 }}>{u}</span>;
 }
 function Card({ children, style={} }) {
   return <div className="card" style={{ background:"#fff", border:"0.5px solid #d3d1c7", borderRadius:20, padding:"1rem 1.25rem", ...style }}>{children}</div>;
 }
-function Tab({ label, active, onClick, accent }) {
-  const c = COLORS[accent||"purple"];
-  return <button onClick={onClick} style={{ padding:"8px 18px", borderRadius:40, border: active?`1.5px solid ${c.border}`:"1.5px solid transparent", background: active?"#fff":"transparent", color: active?c.text:"#888780", fontWeight: active?500:400, fontSize:14, cursor:"pointer", whiteSpace:"nowrap" }}>{label}</button>;
+function Tab({ label, active, onClick }) {
+  return <button onClick={onClick} style={{ padding:"8px 18px", borderRadius:40, border: active?"1.5px solid #b4b2a9":"1.5px solid transparent", background: active?"#fff":"transparent", color: active?"#1a1a18":"#888780", fontWeight: active?500:400, fontSize:14, cursor:"pointer", whiteSpace:"nowrap" }}>{label}</button>;
 }
-function Inp({ placeholder, value, onChange, style={}, type="text" }) {
-  return <input type={type} placeholder={placeholder} value={value} onChange={e=>onChange(e.target.value)} style={style} />;
+function Inp({ placeholder, value, onChange, style={} }) {
+  return <input type="text" placeholder={placeholder} value={value} onChange={e=>onChange(e.target.value)} style={style} />;
 }
 function Sel({ value, onChange, options, style={} }) {
-  return <select value={value} onChange={e=>onChange(e.target.value)} style={style}>{options.map(o=> typeof o === "object" ? <option key={o.value} value={o.value}>{o.label}</option> : <option key={o}>{o}</option>)}</select>;
+  return <select value={value} onChange={e=>onChange(e.target.value)} style={style}>{options.map(o=><option key={o}>{o}</option>)}</select>;
 }
 function Pill({ children, onClick, active, color="purple" }) {
   const c = COLORS[color];
   return <button onClick={onClick} style={{ borderRadius:40, padding:"4px 14px", fontSize:13, cursor:"pointer", fontWeight: active?500:400, background: active?c.bg:"transparent", color: active?c.text:"#888780", border: active?`1px solid ${c.border}`:"1px solid #d3d1c7" }}>{children}</button>;
 }
  
-// ---------- settings popover (used on every page) ----------
-function SettingsButton({ accent, themes, onChangeTheme, extras }) {
-  const [open,setOpen]=useState(false);
-  const c = COLORS[accent];
-  return (
-    <div style={{position:"relative"}}>
-      <button onClick={()=>setOpen(s=>!s)} aria-label="Settings" style={{background:open?c.bg:"transparent",border:`1px solid ${open?c.border:"#d3d1c7"}`,borderRadius:"50%",width:34,height:34,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",padding:0,color:open?c.text:"#888780"}}>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="12" cy="12" r="3"/>
-          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-        </svg>
-      </button>
-      {open&&<div style={{position:"absolute",top:42,right:0,zIndex:30,width:260}}>
-        <Card style={{padding:"14px 16px"}}>
-          <div style={{display:"flex",flexDirection:"column",gap:14}}>
-            <p style={{fontSize:13,fontWeight:500,color:"#888780",margin:0}}>Colour theme</p>
-            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-              {Object.keys(COLORS).map(t=>(
-                <button key={t} onClick={()=>onChangeTheme(t)} title={t} style={{width:26,height:26,borderRadius:"50%",background:COLORS[t].mid,border:accent===t?`3px solid ${COLORS[t].text}`:"3px solid transparent",cursor:"pointer",outline:"none",padding:0,boxShadow:accent===t?`0 0 0 2px ${COLORS[t].bg}`:"none"}}/>
-              ))}
-            </div>
-            {extras}
-          </div>
-        </Card>
-      </div>}
+// Shared settings card for per-page theme
+function ThemeSettingsCard({ value, onChange, label="Page colour" }){
+  return <Card>
+    <div style={{display:"flex",flexDirection:"column",gap:10}}>
+      <p style={{fontSize:13,fontWeight:500,color:"#888780",margin:0}}>{label}</p>
+      <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+        {Object.keys(COLORS).map(t=>(
+          <button key={t} onClick={()=>onChange(t)} style={{width:30,height:30,borderRadius:"50%",background:COLORS[t].mid,border:value===t?`3px solid ${COLORS[t].text}`:"3px solid transparent",cursor:"pointer",outline:"none",padding:0,boxShadow:value===t?`0 0 0 2px ${COLORS[t].bg}`:"none"}} />
+        ))}
+      </div>
     </div>
-  );
+  </Card>;
 }
  
-// ---------- Todos ----------
-function Todos({ accent, setAccent, award }) {
+function SettingsButton({ open, onToggle, color }){
+  const col = COLORS[color] || COLORS.purple;
+  return <button onClick={onToggle} style={{background:open?col.bg:"transparent",border:`1px solid ${open?col.border:"#d3d1c7"}`,borderRadius:20,padding:"4px 14px",fontSize:12,color:open?col.text:"#888780",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:5}}>
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    Settings
+  </button>;
+}
+ 
+// ============================================================
+// TODOS
+// ============================================================
+function Todos({ xpApi, awards }) {
   const [todos,setTodos]=useState(()=>load("pd_todos",[]));
-  const [text,setText]=useState(""); const [due,setDue]=useState(""); const [cat,setCat]=useState("Work"); const [urg,setUrg]=useState("medium"); const [filter,setFilter]=useState("All");
+  const [text,setText]=useState(""); const [due,setDue]=useState(""); const [cat,setCat]=useState("Work"); const [urgency,setUrgency]=useState("Medium");
+  const [filter,setFilter]=useState("All");
+  const [settings,setSettings]=useState(()=>load("pd_todos_settings",{theme:"purple"}));
+  const [settingsOpen,setSettingsOpen]=useState(false);
   useEffect(()=>save("pd_todos",todos),[todos]);
-  function add(){ if(!text.trim())return; setTodos(t=>[...t,{id:Date.now(),text:text.trim(),due,cat,urg,done:false}]); setText(""); setDue(""); }
+  useEffect(()=>save("pd_todos_settings",settings),[settings]);
+  function add(){ if(!text.trim())return; setTodos(t=>[...t,{id:Date.now(),text:text.trim(),due,cat,urgency,done:false}]); setText(""); setDue(""); setUrgency("Medium"); }
   function toggle(id){
     setTodos(t=>t.map(x=>{
-      if (x.id !== id) return x;
-      const nowDone = !x.done;
-      if (nowDone) award(`todo_${id}`);
-      return { ...x, done: nowDone };
+      if(x.id!==id) return x;
+      const newDone = !x.done;
+      const key = `todo_done_${x.id}`;
+      if(newDone){
+        if(!awards.has(key)){ xpApi.addXP(XP_PER_ACTION); awards.add(key); }
+      } else {
+        if(awards.has(key)){ xpApi.removeXP(XP_PER_ACTION); awards.remove(key); }
+      }
+      return {...x,done:newDone};
     }));
   }
-  function remove(id){ setTodos(t=>t.filter(x=>x.id!==id)); }
+  function remove(id){
+    const t = todos.find(x=>x.id===id);
+    if(t){
+      const key = `todo_done_${t.id}`;
+      if(t.done && awards.has(key)){ xpApi.removeXP(XP_PER_ACTION); awards.remove(key); }
+    }
+    setTodos(t=>t.filter(x=>x.id!==id));
+  }
   const td=today();
-  const filtered=todos.filter(t=>filter==="All"?true:filter==="Active"?!t.done:t.done);
-  // sort: not done first, then urgency rank desc, then due (closer first, empty due last), then id
-  const sorted = [...filtered].sort((a,b)=>{
-    if (a.done !== b.done) return a.done?1:-1;
-    const ra = URGENCY_BY_KEY[a.urg||"medium"].rank, rb = URGENCY_BY_KEY[b.urg||"medium"].rank;
-    if (ra !== rb) return rb - ra;
-    const da = a.due || "9999-12-31", db = b.due || "9999-12-31";
-    if (da !== db) return da < db ? -1 : 1;
-    return a.id - b.id;
-  });
+  const sorted = useMemo(()=>{
+    const arr = [...todos];
+    arr.sort((a,b)=>{
+      if(a.done !== b.done) return a.done?1:-1;
+      const ua = URGENCY_RANK[a.urgency||"Medium"];
+      const ub = URGENCY_RANK[b.urgency||"Medium"];
+      if(ua!==ub) return ua-ub;
+      // within urgency: closer date first; no date last
+      if(a.due && b.due) return a.due.localeCompare(b.due);
+      if(a.due) return -1;
+      if(b.due) return 1;
+      return a.id-b.id;
+    });
+    return arr;
+  },[todos]);
+  const filtered=sorted.filter(t=>filter==="All"?true:filter==="Active"?!t.done:t.done);
   const overdue=todos.filter(t=>!t.done&&t.due&&t.due<td).length;
-  const ac = COLORS[accent];
+  const col = COLORS[settings.theme];
   return (
     <div style={{display:"flex",flexDirection:"column",gap:16}}>
+      <div style={{display:"flex",justifyContent:"flex-end"}}><SettingsButton open={settingsOpen} onToggle={()=>setSettingsOpen(s=>!s)} color={settings.theme}/></div>
+      {settingsOpen&&<ThemeSettingsCard value={settings.theme} onChange={v=>setSettings(s=>({...s,theme:v}))} />}
       <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
         <Inp placeholder="What needs to be done?" value={text} onChange={setText} style={{flex:1,minWidth:140}} />
         <input type="date" value={due} onChange={e=>setDue(e.target.value)} />
         <Sel value={cat} onChange={setCat} options={CAT_OPTIONS} />
-        <Sel value={urg} onChange={setUrg} options={URGENCY.map(u=>({value:u.key,label:u.label}))} />
-        <button onClick={add} style={{borderRadius:14,padding:"8px 20px",background:ac.mid,color:"#fff",border:"none",fontWeight:500,fontSize:14,cursor:"pointer"}}>Add</button>
+        <Sel value={urgency} onChange={setUrgency} options={URGENCY_OPTIONS} />
+        <button onClick={add} style={{borderRadius:14,padding:"8px 20px",background:col.mid,color:"#fff",border:"none",fontWeight:500,fontSize:14,cursor:"pointer"}}>Add</button>
       </div>
       <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
-        {["All","Active","Done"].map(f=><Pill key={f} active={filter===f} onClick={()=>setFilter(f)} color={accent}>{f}</Pill>)}
+        {["All","Active","Done"].map(f=><Pill key={f} active={filter===f} onClick={()=>setFilter(f)} color={settings.theme}>{f}</Pill>)}
         {overdue>0&&<span style={{marginLeft:"auto",fontSize:13,color:COLORS.coral.text,background:COLORS.coral.bg,borderRadius:20,padding:"3px 10px",border:`1px solid ${COLORS.coral.border}`}}>{overdue} overdue</span>}
       </div>
       <div style={{display:"flex",flexDirection:"column",gap:8}}>
-        {sorted.length===0&&<p style={{color:"#888780",fontSize:14,textAlign:"center",padding:"1.5rem 0"}}>Nothing here yet</p>}
-        {sorted.map(t=>{
+        {filtered.length===0&&<p style={{color:"#888780",fontSize:14,textAlign:"center",padding:"1.5rem 0"}}>Nothing here yet</p>}
+        {filtered.map(t=>{
           const ov=!t.done&&t.due&&t.due<td;
-          const u = URGENCY_BY_KEY[t.urg||"medium"];
-          const uc = COLORS[u.color];
-          return <Card key={t.id} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 16px",opacity:t.done?.6:1,borderLeft:`4px solid ${uc.mid}`}}>
-            <input type="checkbox" checked={t.done} onChange={()=>toggle(t.id)} style={{width:18,height:18,flexShrink:0,cursor:"pointer"}} />
-            <div style={{flex:1,minWidth:0}}>
+          return <Card key={t.id} style={{display:"flex",alignItems:"center",gap:10,padding:"12px 16px",opacity:t.done?.6:1,flexWrap:"wrap"}}>
+            <input type="checkbox" checked={t.done} onChange={()=>toggle(t.id)} style={{width:18,height:18,flexShrink:0,cursor:"pointer",accentColor:col.mid}} />
+            <div style={{flex:1,minWidth:120}}>
               <span style={{fontSize:15,textDecoration:t.done?"line-through":"none"}}>{t.text}</span>
               {t.due&&<span style={{marginLeft:8,fontSize:12,color:ov?COLORS.coral.text:"#888780"}}>{t.due}</span>}
             </div>
-            <UrgencyBadge urg={t.urg||"medium"}/>
+            <UrgencyBadge u={t.urgency||"Medium"} />
             <Badge cat={t.cat} />
             <button onClick={()=>remove(t.id)} style={{background:"none",border:"none",cursor:"pointer",color:"#888780",fontSize:18,lineHeight:1,padding:"2px 4px",borderRadius:8}}>×</button>
           </Card>;
@@ -400,122 +440,110 @@ function Todos({ accent, setAccent, award }) {
   );
 }
  
-// ---------- TimeTracker (now with count up/down) ----------
-function TimeTracker({ accent, award }) {
+// ============================================================
+// TIME TRACKER (count up OR count down)
+// ============================================================
+function TimeTracker({ xpApi, awards }) {
   const [entries,setEntries]=useState(()=>load("pd_time",[]));
   const [activity,setActivity]=useState(""); const [cat,setCat]=useState("Work");
-  const [mode,setMode]=useState(()=>load("pd_time_mode","up")); // "up" | "down"
-  const [countdownMin,setCountdownMin]=useState(()=>load("pd_time_cd",25));
-  const [running,setRunning]=useState(null);
-  const [elapsed,setElapsed]=useState(0); // for count up: secs elapsed; for countdown: secs remaining
+  const [running,setRunning]=useState(null); const [elapsed,setElapsed]=useState(0);
+  const [settings,setSettings]=useState(()=>load("pd_time_settings",{theme:"teal",mode:"up",cdMinutes:25}));
+  const [settingsOpen,setSettingsOpen]=useState(false);
   const ref=useRef(null);
+  const completedRef = useRef(false);
   useEffect(()=>save("pd_time",entries),[entries]);
-  useEffect(()=>save("pd_time_mode",mode),[mode]);
-  useEffect(()=>save("pd_time_cd",countdownMin),[countdownMin]);
+  useEffect(()=>save("pd_time_settings",settings),[settings]);
  
   useEffect(()=>{
-    if(!running){ clearInterval(ref.current); return; }
-    ref.current = setInterval(()=>{
-      if (running.mode === "up") {
-        setElapsed(Math.floor((Date.now()-running.startMs)/1000));
-      } else {
-        const elapsedSecs = Math.floor((Date.now()-running.startMs)/1000);
-        const remaining = running.targetSecs - elapsedSecs;
-        if (remaining <= 0) {
-          // session complete
-          const completedSecs = running.targetSecs;
-          setEntries(e=>[...e,{id:Date.now(),activity:running.activity,cat:running.cat,secs:completedSecs,date:today(),mode:"down"}]);
-          award(`session_${Date.now()}`);
-          setRunning(null);
-          setElapsed(0);
-          try { new AudioContext(); } catch {}
-        } else {
-          setElapsed(remaining);
+    if(running){
+      ref.current=setInterval(()=>{
+        const elapsedSec = Math.floor((Date.now()-running.startMs)/1000);
+        setElapsed(elapsedSec);
+        if(running.mode==="down" && elapsedSec >= running.totalSec && !completedRef.current){
+          completedRef.current = true;
+          // auto-stop & award
+          finishSession(running.totalSec);
         }
-      }
-    }, 250);
+      },250);
+    } else {
+      clearInterval(ref.current);
+    }
     return ()=>clearInterval(ref.current);
-  },[running, award]);
+  },[running]);
+ 
+  function finishSession(secs){
+    if(secs>0){
+      const id = Date.now();
+      setEntries(e=>[...e,{id,activity:running.activity,cat:running.cat,secs,date:today(),mode:running.mode}]);
+      // award XP for each completed session
+      xpApi.addXP(XP_PER_ACTION);
+    }
+    setRunning(null);
+    setElapsed(0);
+    completedRef.current = false;
+  }
  
   function startStop(){
     if(running){
-      if (running.mode === "up") {
-        const s = Math.round((Date.now()-running.startMs)/1000);
-        if (s>0) {
-          setEntries(e=>[...e,{id:Date.now(),activity:running.activity,cat:running.cat,secs:s,date:today(),mode:"up"}]);
-          award(`session_${Date.now()}`);
-        }
-      } else {
-        // stopped early — log partial
-        const elapsedSecs = Math.round((Date.now()-running.startMs)/1000);
-        if (elapsedSecs>0) {
-          setEntries(e=>[...e,{id:Date.now(),activity:running.activity,cat:running.cat,secs:elapsedSecs,date:today(),mode:"down-cancelled"}]);
-        }
-      }
-      setRunning(null); setElapsed(0);
+      const elapsedSec = Math.floor((Date.now()-running.startMs)/1000);
+      const recorded = running.mode==="down" ? Math.min(elapsedSec, running.totalSec) : elapsedSec;
+      finishSession(recorded);
     } else {
       if(!activity.trim()) return;
-      if (mode === "up") {
-        setRunning({mode:"up",activity:activity.trim(),cat,startMs:Date.now()});
-        setElapsed(0);
-      } else {
-        const targetSecs = Math.max(1, parseInt(countdownMin)||25) * 60;
-        setRunning({mode:"down",activity:activity.trim(),cat,startMs:Date.now(),targetSecs});
-        setElapsed(targetSecs);
-      }
+      const totalSec = settings.mode==="down" ? Math.max(60, settings.cdMinutes*60) : 0;
+      setRunning({activity:activity.trim(),cat,startMs:Date.now(),mode:settings.mode,totalSec});
+      setElapsed(0);
+      completedRef.current = false;
     }
   }
-  function remove(id){ setEntries(e=>e.filter(x=>x.id!==id)); }
+ 
+  function remove(id){
+    // removing logged session — withdraw the XP awarded for it
+    const e = entries.find(x=>x.id===id);
+    if(e){ xpApi.removeXP(XP_PER_ACTION); }
+    setEntries(arr=>arr.filter(x=>x.id!==id));
+  }
   const td=today(); const todayE=entries.filter(e=>e.date===td);
   const todayS=todayE.reduce((a,e)=>a+e.secs,0); const totalS=entries.reduce((a,e)=>a+e.secs,0);
   const byCat=CAT_OPTIONS.map(c=>({cat:c,secs:entries.filter(e=>e.cat===c).reduce((a,e)=>a+e.secs,0)})).filter(x=>x.secs>0);
-  const ac = COLORS[accent];
- 
-  // ring progress for countdown
-  let progress = 0;
-  if (running && running.mode === "down") {
-    progress = 1 - (elapsed / running.targetSecs);
-  } else if (running && running.mode === "up") {
-    progress = (elapsed % 60) / 60;
-  }
-  const r=70, circ = 2*Math.PI*r;
- 
+  const col = COLORS[settings.theme];
+  const remainingSec = running && running.mode==="down" ? Math.max(0, running.totalSec - elapsed) : elapsed;
+  const cdPct = running && running.mode==="down" ? Math.min(100, (elapsed/running.totalSec)*100) : 0;
   return (
     <div style={{display:"flex",flexDirection:"column",gap:16}}>
-      <Card style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-        <Inp placeholder="Activity name" value={activity} onChange={setActivity} style={{flex:1,minWidth:140}} />
-        <Sel value={cat} onChange={setCat} options={CAT_OPTIONS} />
-        <button onClick={startStop} style={{borderRadius:14,padding:"8px 22px",background:running?COLORS.coral.mid:ac.mid,color:"#fff",border:"none",fontWeight:500,fontSize:14,cursor:"pointer",minWidth:80}}>{running?"Stop":"Start"}</button>
-      </Card>
- 
-      <Card style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-        <span style={{fontSize:13,color:"#888780",fontWeight:500}}>Mode</span>
-        <div style={{display:"flex",gap:6}}>
-          <Pill active={mode==="up"} onClick={()=>!running&&setMode("up")} color={accent}>Count up</Pill>
-          <Pill active={mode==="down"} onClick={()=>!running&&setMode("down")} color={accent}>Count down</Pill>
-        </div>
-        {mode==="down"&&<div style={{display:"flex",alignItems:"center",gap:8,marginLeft:"auto"}}>
-          <span style={{fontSize:13,color:"#888780"}}>Duration</span>
-          <input type="number" value={countdownMin} min={1} max={240} onChange={e=>!running&&setCountdownMin(Math.max(1,parseInt(e.target.value)||25))} style={{width:64}} disabled={!!running}/>
-          <span style={{fontSize:13,color:"#888780"}}>min</span>
-        </div>}
-      </Card>
- 
-      {running&&<Card style={{textAlign:"center",background:ac.bg,border:`1px solid ${ac.border}`,padding:"20px 16px"}}>
-        <p style={{fontSize:13,color:ac.text,margin:"0 0 8px"}}>{running.mode==="down"?"Counting down":"Tracking"}: {running.activity}</p>
-        <div style={{position:"relative",width:170,height:170,margin:"0 auto"}}>
-          <svg width="170" height="170" viewBox="0 0 170 170">
-            <circle cx="85" cy="85" r={r} fill="none" stroke={ac.border} strokeWidth="6" opacity="0.3"/>
-            <circle cx="85" cy="85" r={r} fill="none" stroke={ac.mid} strokeWidth="6" strokeLinecap="round"
-              strokeDasharray={circ} strokeDashoffset={circ*(1-Math.max(0,Math.min(1,progress)))}
-              transform="rotate(-90 85 85)"/>
-          </svg>
-          <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center"}}>
-            <span style={{fontSize:30,fontWeight:500,color:ac.text}}>{fmtClock(elapsed)}</span>
+      <div style={{display:"flex",justifyContent:"flex-end"}}><SettingsButton open={settingsOpen} onToggle={()=>setSettingsOpen(s=>!s)} color={settings.theme}/></div>
+      {settingsOpen&&<Card>
+        <div style={{display:"flex",flexDirection:"column",gap:14}}>
+          <p style={{fontSize:13,fontWeight:500,color:"#888780",margin:0}}>Timer settings</p>
+          <div style={{display:"flex",gap:8}}>
+            <Pill active={settings.mode==="up"} onClick={()=>setSettings(s=>({...s,mode:"up"}))} color={settings.theme}>Count up</Pill>
+            <Pill active={settings.mode==="down"} onClick={()=>setSettings(s=>({...s,mode:"down"}))} color={settings.theme}>Count down</Pill>
+          </div>
+          {settings.mode==="down"&&<div style={{display:"flex",alignItems:"center",gap:10}}>
+            <span style={{fontSize:14,flex:1}}>Countdown length</span>
+            <input type="number" value={settings.cdMinutes} min={1} max={180} onChange={e=>setSettings(s=>({...s,cdMinutes:Math.max(1,parseInt(e.target.value)||25)}))} style={{width:80}} />
+            <span style={{fontSize:13,color:"#888780"}}>min</span>
+          </div>}
+          <div>
+            <p style={{fontSize:14,marginBottom:8}}>Colour theme</p>
+            <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+              {Object.keys(COLORS).map(t=>(
+                <button key={t} onClick={()=>setSettings(s=>({...s,theme:t}))} style={{width:30,height:30,borderRadius:"50%",background:COLORS[t].mid,border:settings.theme===t?`3px solid ${COLORS[t].text}`:"3px solid transparent",cursor:"pointer",outline:"none",padding:0,boxShadow:settings.theme===t?`0 0 0 2px ${COLORS[t].bg}`:"none"}} />
+              ))}
+            </div>
           </div>
         </div>
       </Card>}
- 
+      <Card style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+        <Inp placeholder="Activity name" value={activity} onChange={setActivity} style={{flex:1,minWidth:140}} />
+        <Sel value={cat} onChange={setCat} options={CAT_OPTIONS} />
+        <button onClick={startStop} style={{borderRadius:14,padding:"8px 22px",background:running?COLORS.coral.mid:col.mid,color:"#fff",border:"none",fontWeight:500,fontSize:14,cursor:"pointer",minWidth:80}}>{running?"Stop":"Start"}</button>
+      </Card>
+      {running&&<Card style={{textAlign:"center",background:col.bg,border:`1px solid ${col.border}`}}>
+        <p style={{fontSize:13,color:col.text,margin:"0 0 4px"}}>{running.mode==="down"?"Counting down":"Tracking"}: {running.activity}</p>
+        <p style={{fontSize:36,fontWeight:500,margin:"4px 0",color:col.text,fontVariantNumeric:"tabular-nums"}}>{running.mode==="down"?fmtClock(remainingSec):fmt(elapsed)}</p>
+        {running.mode==="down"&&<div className="bar-bg" style={{height:6,borderRadius:20,background:"#e8e6e0",overflow:"hidden",marginTop:8}}><div style={{height:"100%",width:`${cdPct}%`,background:col.mid,borderRadius:20,transition:"width 0.25s"}}/></div>}
+      </Card>}
       <div style={{display:"flex",gap:12}}>
         {[{v:fmt(todayS),l:"today"},{v:fmt(totalS),l:"total"},{v:todayE.length,l:"sessions today"}].map(({v,l})=>
           <div key={l} className="metric" style={{flex:1,textAlign:"center",background:"#f1efe8",borderRadius:16,padding:"12px 8px"}}>
@@ -526,10 +554,10 @@ function TimeTracker({ accent, award }) {
       {byCat.length>0&&<Card>
         <p style={{fontSize:13,fontWeight:500,margin:"0 0 10px",color:"#888780"}}>Time by category</p>
         <div style={{display:"flex",flexDirection:"column",gap:8}}>
-          {byCat.map(({cat:c,secs})=>{ const pct=totalS?Math.round(secs/totalS*100):0; const col=COLORS[CAT_COLOR[c]||"green"]; return(
+          {byCat.map(({cat:c,secs})=>{ const pct=totalS?Math.round(secs/totalS*100):0; const ccol=COLORS[CAT_COLOR[c]||"green"]; return(
             <div key={c}>
               <div style={{display:"flex",justifyContent:"space-between",fontSize:13,marginBottom:3}}><span>{c}</span><span style={{color:"#888780"}}>{fmt(secs)} · {pct}%</span></div>
-              <div className="bar-bg" style={{height:8,borderRadius:20,background:"#e8e6e0",overflow:"hidden"}}><div style={{height:"100%",width:`${pct}%`,background:col.mid,borderRadius:20}}/></div>
+              <div className="bar-bg" style={{height:8,borderRadius:20,background:"#e8e6e0",overflow:"hidden"}}><div style={{height:"100%",width:`${pct}%`,background:ccol.mid,borderRadius:20}}/></div>
             </div>);})}
         </div>
       </Card>}
@@ -548,32 +576,57 @@ function TimeTracker({ accent, award }) {
   );
 }
  
-// ---------- Habits ----------
-function Habits({ accent, award }) {
+// ============================================================
+// HABITS
+// ============================================================
+function Habits({ xpApi, awards }) {
   const [habits,setHabits]=useState(()=>load("pd_habits",[]));
   const [name,setName]=useState(""); const [cat,setCat]=useState("Health");
+  const [settings,setSettings]=useState(()=>load("pd_habits_settings",{theme:"coral"}));
+  const [settingsOpen,setSettingsOpen]=useState(false);
   const td=today();
   useEffect(()=>save("pd_habits",habits),[habits]);
+  useEffect(()=>save("pd_habits_settings",settings),[settings]);
   function add(){ if(!name.trim())return; setHabits(h=>[...h,{id:Date.now(),name:name.trim(),cat,completions:[]}]); setName(""); }
   function toggle(id){
     setHabits(h=>h.map(x=>{
       if(x.id!==id) return x;
       const d=x.completions.includes(td);
-      if (!d) award(`habit_${id}_${td}`);
-      return{...x,completions:d?x.completions.filter(c=>c!==td):[...x.completions,td]};
+      const key = `habit_${x.id}_${td}`;
+      if(d){
+        // unchecking
+        if(awards.has(key)){ xpApi.removeXP(XP_PER_ACTION); awards.remove(key); }
+        return {...x,completions:x.completions.filter(c=>c!==td)};
+      } else {
+        if(!awards.has(key)){ xpApi.addXP(XP_PER_ACTION); awards.add(key); }
+        return {...x,completions:[...x.completions,td]};
+      }
     }));
   }
-  function remove(id){ setHabits(h=>h.filter(x=>x.id!==id)); }
+  function remove(id){
+    const h = habits.find(x=>x.id===id);
+    if(h){
+      // remove any awards keyed to this habit (only today's matters, but be safe)
+      h.completions.forEach(d=>{
+        const key=`habit_${h.id}_${d}`;
+        if(awards.has(key) && d===td){ xpApi.removeXP(XP_PER_ACTION); }
+        awards.remove(key);
+      });
+    }
+    setHabits(arr=>arr.filter(x=>x.id!==id));
+  }
   function streak(c){ let s=0,d=new Date(); while(true){ const ds=d.toISOString().slice(0,10); if(c.includes(ds)){s++;d.setDate(d.getDate()-1);}else break; } return s; }
   const last7=Array.from({length:7},(_,i)=>{ const d=new Date(); d.setDate(d.getDate()-(6-i)); return d.toISOString().slice(0,10); });
   const doneToday=habits.filter(h=>h.completions.includes(td)).length;
-  const ac=COLORS[accent];
+  const col = COLORS[settings.theme];
   return (
     <div style={{display:"flex",flexDirection:"column",gap:16}}>
+      <div style={{display:"flex",justifyContent:"flex-end"}}><SettingsButton open={settingsOpen} onToggle={()=>setSettingsOpen(s=>!s)} color={settings.theme}/></div>
+      {settingsOpen&&<ThemeSettingsCard value={settings.theme} onChange={v=>setSettings(s=>({...s,theme:v}))} />}
       <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
         <Inp placeholder="New habit" value={name} onChange={setName} style={{flex:1,minWidth:160}} />
         <Sel value={cat} onChange={setCat} options={CAT_OPTIONS} />
-        <button onClick={add} style={{borderRadius:14,padding:"8px 20px",background:ac.mid,color:"#fff",border:"none",fontWeight:500,fontSize:14,cursor:"pointer"}}>Add</button>
+        <button onClick={add} style={{borderRadius:14,padding:"8px 20px",background:col.mid,color:"#fff",border:"none",fontWeight:500,fontSize:14,cursor:"pointer"}}>Add</button>
       </div>
       <div style={{display:"flex",gap:12}}>
         {[{v:`${doneToday}/${habits.length}`,l:"done today"},{v:`${habits.length?Math.round(doneToday/habits.length*100):0}%`,l:"completion rate"},{v:habits.reduce((a,h)=>Math.max(a,streak(h.completions)),0),l:"best streak"}].map(({v,l})=>
@@ -584,17 +637,17 @@ function Habits({ accent, award }) {
       </div>
       {habits.length===0&&<p style={{color:"#888780",fontSize:14,textAlign:"center",padding:"1.5rem 0"}}>Add your first habit above</p>}
       {habits.map(h=>{
-        const done=h.completions.includes(td); const s=streak(h.completions); const col=COLORS[CAT_COLOR[h.cat]||"green"];
+        const done=h.completions.includes(td); const s=streak(h.completions); const ccol=COLORS[CAT_COLOR[h.cat]||"green"];
         return <Card key={h.id}>
-          <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:10}}>
-            <button onClick={()=>toggle(h.id)} style={{width:28,height:28,borderRadius:50,border:`2px solid ${done?col.mid:"#d3d1c7"}`,background:done?col.mid:"transparent",cursor:"pointer",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:16}}>{done?"✓":""}</button>
-            <span style={{flex:1,fontSize:15}}>{h.name}</span>
+          <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:10,flexWrap:"wrap"}}>
+            <button onClick={()=>toggle(h.id)} style={{width:28,height:28,borderRadius:50,border:`2px solid ${done?ccol.mid:"#d3d1c7"}`,background:done?ccol.mid:"transparent",cursor:"pointer",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:16}}>{done?"✓":""}</button>
+            <span style={{flex:1,fontSize:15,minWidth:120}}>{h.name}</span>
             <Badge cat={h.cat} />
             {s>0&&<span style={{fontSize:13,color:COLORS.amber.text,background:COLORS.amber.bg,borderRadius:20,padding:"2px 10px",border:`1px solid ${COLORS.amber.border}`}}>{s} day streak</span>}
             <button onClick={()=>remove(h.id)} style={{background:"none",border:"none",cursor:"pointer",color:"#888780",fontSize:18,lineHeight:1,padding:"2px 4px",borderRadius:8}}>×</button>
           </div>
           <div style={{display:"flex",gap:5}}>
-            {last7.map(d=>{ const f=h.completions.includes(d); const it=d===td; return <div key={d} style={{flex:1,height:10,borderRadius:10,background:f?col.mid:"#e8e6e0",border:it?`1.5px solid ${col.border}`:"none"}}/>; })}
+            {last7.map(d=>{ const f=h.completions.includes(d); const it=d===td; return <div key={d} style={{flex:1,height:10,borderRadius:10,background:f?ccol.mid:"#e8e6e0",border:it?`1.5px solid ${ccol.border}`:"none"}}/>; })}
           </div>
           <div style={{display:"flex",justifyContent:"space-between",marginTop:4}}>
             {last7.map(d=><span key={d} style={{flex:1,fontSize:10,color:"#888780",textAlign:"center"}}>{"SMTWTFS"[new Date(d).getDay()]}</span>)}
@@ -605,21 +658,33 @@ function Habits({ accent, award }) {
   );
 }
  
-// ---------- Hydration ----------
-function Hydration({ accent, award }) {
-  const [settings,setSettings]=useState(()=>load("pd_hydration",{portion:250,goal:2000}));
+// ============================================================
+// HYDRATION (with anti-spam goal award)
+// ============================================================
+function Hydration({ xpApi, awards }) {
+  const [settings,setSettings]=useState(()=>load("pd_hydration",{portion:250,goal:2000,theme:"teal"}));
   const [log,setLog]=useState(()=>load("pd_hydration_log",[]));
+  const [settingsOpen,setSettingsOpen]=useState(false);
   const td=today();
   useEffect(()=>save("pd_hydration",settings),[settings]);
   useEffect(()=>save("pd_hydration_log",log),[log]);
   const todayE=log.filter(e=>e.date===td);
   const todayMl=todayE.reduce((a,e)=>a+e.ml,0);
   const pct=Math.min(100,Math.round(todayMl/settings.goal*100));
-  const col=COLORS[accent];
-  // award xp when goal reached today (once per day)
+  const col=COLORS[settings.theme]||COLORS.teal;
+ 
+  // award when goal reached today, refund if drops below
   useEffect(()=>{
-    if (todayMl >= settings.goal) award(`water_${td}`);
-  },[todayMl, settings.goal, td, award]);
+    const key = `water_goal_${td}`;
+    if(todayMl >= settings.goal && !awards.has(key)){
+      xpApi.addXP(XP_PER_ACTION);
+      awards.add(key);
+    } else if(todayMl < settings.goal && awards.has(key)){
+      xpApi.removeXP(XP_PER_ACTION);
+      awards.remove(key);
+    }
+  },[todayMl, settings.goal]);
+ 
   function addWater(){setLog(l=>[...l,{id:Date.now(),ml:settings.portion,date:td}]);}
   function removeWater(){if(!todayE.length)return;const last=todayE[todayE.length-1];setLog(l=>l.filter(e=>e.id!==last.id));}
   const cx=100,cy=100,r=85;
@@ -628,7 +693,8 @@ function Hydration({ accent, award }) {
   const textOnWater=pct>=52;
   return (
     <div style={{display:"flex",flexDirection:"column",gap:16}}>
-      <Card>
+      <div style={{display:"flex",justifyContent:"flex-end"}}><SettingsButton open={settingsOpen} onToggle={()=>setSettingsOpen(s=>!s)} color={settings.theme}/></div>
+      {settingsOpen&&<Card>
         <div style={{display:"flex",flexDirection:"column",gap:14}}>
           <p style={{fontSize:13,fontWeight:500,color:"#888780",margin:0}}>Hydration settings</p>
           <div style={{display:"flex",alignItems:"center",gap:10}}>
@@ -641,8 +707,16 @@ function Hydration({ accent, award }) {
             <input type="number" value={settings.goal} min={250} max={10000} step={250} onChange={e=>setSettings(s=>({...s,goal:Math.max(250,parseInt(e.target.value)||2000)}))} style={{width:80}} />
             <span style={{fontSize:13,color:"#888780"}}>ml</span>
           </div>
+          <div>
+            <p style={{fontSize:14,marginBottom:8}}>Colour theme</p>
+            <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+              {Object.keys(COLORS).map(t=>(
+                <button key={t} onClick={()=>setSettings(s=>({...s,theme:t}))} style={{width:30,height:30,borderRadius:"50%",background:COLORS[t].mid,border:settings.theme===t?`3px solid ${COLORS[t].text}`:"3px solid transparent",cursor:"pointer",outline:"none",padding:0,boxShadow:settings.theme===t?`0 0 0 2px ${COLORS[t].bg}`:"none"}} />
+              ))}
+            </div>
+          </div>
         </div>
-      </Card>
+      </Card>}
       <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:20,padding:"0.5rem 0"}}>
         <div style={{position:"relative",width:200,height:200}}>
           <svg width="200" height="200" viewBox="0 0 200 200">
@@ -684,564 +758,374 @@ function Hydration({ accent, award }) {
   );
 }
  
-// ---------- Mood face SVG ----------
-function MoodFace({ kind, size=44, color }) {
-  const c = color;
-  const stroke = "#3a3a37";
-  // expressions
-  let mouth = null, eyes = null;
-  if (kind === "veryBad") {
-    eyes = <><path d="M14 17 L19 22 M19 17 L14 22" stroke={stroke} strokeWidth="2" strokeLinecap="round"/><path d="M27 17 L32 22 M32 17 L27 22" stroke={stroke} strokeWidth="2" strokeLinecap="round"/></>;
-    mouth = <path d="M14 33 Q23 26, 32 33" stroke={stroke} strokeWidth="2.2" fill="none" strokeLinecap="round"/>;
-  } else if (kind === "bad") {
-    eyes = <><circle cx="17" cy="20" r="1.8" fill={stroke}/><circle cx="29" cy="20" r="1.8" fill={stroke}/></>;
-    mouth = <path d="M16 32 Q23 28, 30 32" stroke={stroke} strokeWidth="2.2" fill="none" strokeLinecap="round"/>;
-  } else if (kind === "neutral") {
-    eyes = <><circle cx="17" cy="20" r="1.8" fill={stroke}/><circle cx="29" cy="20" r="1.8" fill={stroke}/></>;
-    mouth = <line x1="17" y1="30" x2="29" y2="30" stroke={stroke} strokeWidth="2.2" strokeLinecap="round"/>;
-  } else if (kind === "good") {
-    eyes = <><circle cx="17" cy="20" r="1.8" fill={stroke}/><circle cx="29" cy="20" r="1.8" fill={stroke}/></>;
-    mouth = <path d="M16 28 Q23 34, 30 28" stroke={stroke} strokeWidth="2.2" fill="none" strokeLinecap="round"/>;
-  } else if (kind === "great") {
-    eyes = <><path d="M14 21 Q17 17, 20 21" stroke={stroke} strokeWidth="2" fill="none" strokeLinecap="round"/><path d="M26 21 Q29 17, 32 21" stroke={stroke} strokeWidth="2" fill="none" strokeLinecap="round"/></>;
-    mouth = <path d="M14 27 Q23 36, 32 27 Q28 31, 23 31 Q18 31, 14 27 Z" fill={stroke}/>;
-  }
-  return (
-    <svg width={size} height={size} viewBox="0 0 46 46">
-      <circle cx="23" cy="23" r="20" fill={c}/>
-      {eyes}
-      {mouth}
-    </svg>
-  );
+// ============================================================
+// MOOD LOGGER
+// ============================================================
+const MOODS = [
+  { key:"very_bad", label:"Very bad", color:"coral" },
+  { key:"bad",      label:"Bad",      color:"amber" },
+  { key:"neutral",  label:"Neutral",  color:"purple" },
+  { key:"good",     label:"Good",     color:"teal" },
+  { key:"excellent",label:"Excellent",color:"green" },
+];
+ 
+function MoodFace({ moodKey, size=44, glow=false }){
+  const m = MOODS.find(x=>x.key===moodKey);
+  if(!m) return null;
+  const c = COLORS[m.color];
+  // mouth path differs per mood
+  let mouth;
+  if(moodKey==="very_bad") mouth = <path d="M22 42 Q32 34 42 42" stroke={c.text} strokeWidth="2" fill="none" strokeLinecap="round"/>;
+  else if(moodKey==="bad") mouth = <path d="M24 41 Q32 37 40 41" stroke={c.text} strokeWidth="2" fill="none" strokeLinecap="round"/>;
+  else if(moodKey==="neutral") mouth = <line x1="24" y1="40" x2="40" y2="40" stroke={c.text} strokeWidth="2" strokeLinecap="round"/>;
+  else if(moodKey==="good") mouth = <path d="M24 38 Q32 44 40 38" stroke={c.text} strokeWidth="2" fill="none" strokeLinecap="round"/>;
+  else mouth = <path d="M22 36 Q32 48 42 36" stroke={c.text} strokeWidth="2" fill="none" strokeLinecap="round"/>;
+  return <svg width={size} height={size} viewBox="0 0 64 64" style={{display:"block",filter:glow?`drop-shadow(0 0 4px ${c.mid})`:"none"}}>
+    <circle cx="32" cy="32" r="26" fill={c.bg} stroke={c.border} strokeWidth="1.5"/>
+    <circle cx="24" cy="28" r="2.5" fill={c.text}/>
+    <circle cx="40" cy="28" r="2.5" fill={c.text}/>
+    {moodKey==="excellent" && <>
+      <path d="M14 22 Q12 18 16 18" stroke={c.mid} strokeWidth="1.5" fill="none"/>
+      <path d="M50 22 Q52 18 48 18" stroke={c.mid} strokeWidth="1.5" fill="none"/>
+    </>}
+    {mouth}
+  </svg>;
 }
  
-// ---------- Mood Logger ----------
-function MoodLogger({ accent, award }) {
-  const [logs,setLogs]=useState(()=>load("pd_mood",{}));
-  const [note,setNote]=useState("");
+function MoodLogger() {
+  const [entries,setEntries]=useState(()=>load("pd_mood",{})); // {YYYY-MM-DD: moodKey}
+  const [settings,setSettings]=useState(()=>load("pd_mood_settings",{theme:"pink"}));
+  const [settingsOpen,setSettingsOpen]=useState(false);
   const [viewMonth,setViewMonth]=useState(()=>{ const d=new Date(); return {y:d.getFullYear(),m:d.getMonth()}; });
-  useEffect(()=>save("pd_mood",logs),[logs]);
+  useEffect(()=>save("pd_mood",entries),[entries]);
+  useEffect(()=>save("pd_mood_settings",settings),[settings]);
   const td = today();
-  const todayMood = logs[td]?.mood;
-  function logMood(k) {
-    setLogs(prev=>({ ...prev, [td]: { mood: k, note: prev[td]?.note || "" } }));
-  }
-  function saveNote() {
-    if (!todayMood) return;
-    setLogs(prev=>({ ...prev, [td]: { ...prev[td], note } }));
-    setNote("");
-  }
-  function prevMonth(){ setViewMonth(v=>{ const m=v.m-1; return m<0?{y:v.y-1,m:11}:{...v,m}; }); }
-  function nextMonth(){ setViewMonth(v=>{ const m=v.m+1; return m>11?{y:v.y+1,m:0}:{...v,m}; }); }
+  const todays = entries[td];
+  function pick(key){ setEntries(e=>({...e, [td]:key})); }
+  const col = COLORS[settings.theme];
  
-  const {y,m} = viewMonth;
-  const monthName = new Date(y,m,1).toLocaleString(undefined,{month:"long",year:"numeric"});
-  const firstDay = new Date(y,m,1).getDay(); // 0=Sun
-  const daysInMonth = new Date(y,m+1,0).getDate();
+  // calendar grid
+  const firstDay = new Date(viewMonth.y, viewMonth.m, 1);
+  const daysInMonth = new Date(viewMonth.y, viewMonth.m+1, 0).getDate();
+  const startOffset = firstDay.getDay(); // 0=Sun
   const cells = [];
-  for (let i=0;i<firstDay;i++) cells.push(null);
-  for (let d=1;d<=daysInMonth;d++) {
-    const ds = `${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
-    cells.push({ day:d, ds, entry: logs[ds] });
+  for(let i=0;i<startOffset;i++) cells.push(null);
+  for(let d=1; d<=daysInMonth; d++){
+    const ds = `${viewMonth.y}-${String(viewMonth.m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+    cells.push({ d, ds, mood: entries[ds] });
   }
-  const ac = COLORS[accent];
+  const monthName = new Date(viewMonth.y, viewMonth.m, 1).toLocaleString("en",{month:"long",year:"numeric"});
+  function prevMonth(){ setViewMonth(v=>{ const m=v.m-1; if(m<0) return {y:v.y-1,m:11}; return {y:v.y,m}; }); }
+  function nextMonth(){ setViewMonth(v=>{ const m=v.m+1; if(m>11) return {y:v.y+1,m:0}; return {y:v.y,m}; }); }
+ 
+  // stats
+  const moodCounts = MOODS.map(m=>({...m, count:Object.values(entries).filter(v=>v===m.key).length}));
+  const totalLogged = Object.keys(entries).length;
  
   return (
     <div style={{display:"flex",flexDirection:"column",gap:16}}>
+      <div style={{display:"flex",justifyContent:"flex-end"}}><SettingsButton open={settingsOpen} onToggle={()=>setSettingsOpen(s=>!s)} color={settings.theme}/></div>
+      {settingsOpen&&<ThemeSettingsCard value={settings.theme} onChange={v=>setSettings(s=>({...s,theme:v}))} />}
       <Card>
-        <p style={{fontSize:13,fontWeight:500,color:"#888780",margin:"0 0 14px"}}>How are you feeling today?</p>
-        <div style={{display:"flex",justifyContent:"space-between",gap:8,flexWrap:"wrap"}}>
-          {MOODS.map(mo=>{
-            const c = COLORS[mo.color];
-            const selected = todayMood === mo.key;
-            return (
-              <button key={mo.key} onClick={()=>logMood(mo.key)} style={{flex:1,minWidth:60,background:selected?c.bg:"transparent",border:selected?`1.5px solid ${c.border}`:"1.5px solid transparent",borderRadius:16,padding:"10px 6px 8px",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:4,transition:"all 0.15s"}}>
-                <MoodFace kind={mo.face} color={c.mid} size={44}/>
-                <span style={{fontSize:11,color:selected?c.text:"#888780",fontWeight:selected?500:400}}>{mo.label}</span>
-              </button>
-            );
-          })}
+        <p style={{fontSize:13,fontWeight:500,color:"#888780",margin:"0 0 14px",textAlign:"center"}}>How are you feeling today?</p>
+        <div style={{display:"flex",justifyContent:"space-between",gap:8,alignItems:"flex-end"}}>
+          {MOODS.map(m=>(
+            <button key={m.key} onClick={()=>pick(m.key)} style={{background:"none",border:"none",padding:0,cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:4,flex:1,opacity:todays&&todays!==m.key?0.4:1,transform:todays===m.key?"scale(1.08)":"scale(1)",transition:"all 0.2s"}}>
+              <MoodFace moodKey={m.key} size={48} glow={todays===m.key}/>
+              <span style={{fontSize:11,color:todays===m.key?COLORS[m.color].text:"#888780",fontWeight:todays===m.key?500:400}}>{m.label}</span>
+            </button>
+          ))}
         </div>
-        {todayMood&&<div style={{marginTop:14,display:"flex",gap:8}}>
-          <Inp placeholder="Optional note for today…" value={note} onChange={setNote} style={{flex:1}}/>
-          <button onClick={saveNote} style={{borderRadius:14,padding:"8px 18px",background:ac.mid,color:"#fff",border:"none",fontWeight:500,fontSize:13,cursor:"pointer"}}>Save</button>
-        </div>}
-        {todayMood&&logs[td]?.note&&<p style={{fontSize:13,color:"#888780",marginTop:10,fontStyle:"italic"}}>"{logs[td].note}"</p>}
+        {todays&&<p style={{fontSize:12,color:"#888780",textAlign:"center",marginTop:14}}>Logged for today · tap a different face to change</p>}
       </Card>
  
       <Card>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
-          <button onClick={prevMonth} style={{background:"transparent",border:"none",cursor:"pointer",color:"#888780",fontSize:20,padding:"2px 8px"}}>‹</button>
+          <button onClick={prevMonth} style={{background:"none",border:"none",cursor:"pointer",fontSize:18,color:"#888780",padding:"2px 8px",borderRadius:8}}>‹</button>
           <p style={{fontSize:14,fontWeight:500,margin:0}}>{monthName}</p>
-          <button onClick={nextMonth} style={{background:"transparent",border:"none",cursor:"pointer",color:"#888780",fontSize:20,padding:"2px 8px"}}>›</button>
+          <button onClick={nextMonth} style={{background:"none",border:"none",cursor:"pointer",fontSize:18,color:"#888780",padding:"2px 8px",borderRadius:8}}>›</button>
         </div>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4,marginBottom:4}}>
-          {["S","M","T","W","T","F","S"].map((d,i)=><span key={i} style={{fontSize:10,color:"#888780",textAlign:"center",padding:"2px 0"}}>{d}</span>)}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4,marginBottom:6}}>
+          {["S","M","T","W","T","F","S"].map((d,i)=><div key={i} style={{textAlign:"center",fontSize:10,color:"#aaa8a2"}}>{d}</div>)}
         </div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4}}>
           {cells.map((cell,i)=>{
-            if (!cell) return <div key={i} style={{aspectRatio:"1/1"}}/>;
-            const mo = cell.entry ? MOOD_BY_KEY[cell.entry.mood] : null;
-            const isToday = cell.ds === td;
-            return (
-              <div key={i} style={{aspectRatio:"1/1",borderRadius:10,background: mo?COLORS[mo.color].bg:"#f1efe8",border: isToday?`1.5px solid ${ac.border}`:"0.5px solid transparent",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",position:"relative",overflow:"hidden"}}>
-                <span style={{fontSize:9,color: mo?COLORS[mo.color].text:"#888780",position:"absolute",top:3,left:4}}>{cell.day}</span>
-                {mo && <MoodFace kind={mo.face} color={COLORS[mo.color].mid} size={26}/>}
-              </div>
-            );
+            if(!cell) return <div key={i}/>;
+            const isToday = cell.ds===td;
+            return <div key={i} style={{aspectRatio:"1/1",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",borderRadius:10,background:isToday?col.bg:"transparent",border:isToday?`1px solid ${col.border}`:"1px solid transparent",gap:1,padding:2}}>
+              <span style={{fontSize:9,color:"#aaa8a2",lineHeight:1}}>{cell.d}</span>
+              {cell.mood && <MoodFace moodKey={cell.mood} size={22}/>}
+            </div>;
           })}
         </div>
       </Card>
  
-      <div style={{display:"flex",gap:12}}>
-        {(()=>{
-          const total = Object.keys(logs).length;
-          // current streak ending today
-          let streak = 0;
-          const d = new Date();
-          while (true) {
-            const ds = d.toISOString().slice(0,10);
-            if (logs[ds]) { streak++; d.setDate(d.getDate()-1); } else break;
-          }
-          const moodCounts = MOODS.map(m=>({key:m.key,n:Object.values(logs).filter(l=>l.mood===m.key).length}));
-          const top = moodCounts.sort((a,b)=>b.n-a.n)[0];
-          const topLabel = top && top.n>0 ? MOOD_BY_KEY[top.key].label : "—";
-          return [
-            {v:total,l:"days logged"},
-            {v:streak,l:"current streak"},
-            {v:topLabel,l:"most often"},
-          ];
-        })().map(({v,l})=>
-          <div key={l} className="metric" style={{flex:1,textAlign:"center",background:"#f1efe8",borderRadius:16,padding:"12px 8px"}}>
-            <p style={{fontSize:18,fontWeight:500,margin:0}}>{v}</p>
-            <p style={{fontSize:12,color:"#888780",margin:0}}>{l}</p>
-          </div>)}
-      </div>
+      <Card>
+        <p style={{fontSize:13,fontWeight:500,color:"#888780",margin:"0 0 10px"}}>All-time mood</p>
+        <div style={{display:"flex",justifyContent:"space-between",gap:8}}>
+          {moodCounts.map(m=>(
+            <div key={m.key} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
+              <MoodFace moodKey={m.key} size={28}/>
+              <span style={{fontSize:14,fontWeight:500,color:COLORS[m.color].text}}>{m.count}</span>
+            </div>
+          ))}
+        </div>
+        <p style={{fontSize:11,color:"#aaa8a2",textAlign:"center",marginTop:10}}>{totalLogged} days logged</p>
+      </Card>
     </div>
   );
 }
  
-// ---------- Progress ----------
-function Progress({ accent, xp }) {
-  const entries = load("pd_time",[]);
-  const habits = load("pd_habits",[]);
-  const hydroLog = load("pd_hydration_log",[]);
-  const td = today();
-  const totalSecs = entries.reduce((a,e)=>a+e.secs,0);
-  const totalHours = (totalSecs/3600);
-  function streak(c){ let s=0,d=new Date(); while(true){ const ds=d.toISOString().slice(0,10); if(c.includes(ds)){s++;d.setDate(d.getDate()-1);}else break; } return s; }
-  // longest historical streak across any habit
-  function longestStreak(completions) {
-    if (!completions.length) return 0;
-    const sorted = [...completions].sort();
-    let best = 1, cur = 1;
-    for (let i=1;i<sorted.length;i++) {
-      const prev = new Date(sorted[i-1]);
-      const curD = new Date(sorted[i]);
-      const diff = Math.round((curD-prev)/(1000*60*60*24));
-      if (diff === 1) { cur++; best = Math.max(best,cur); } else { cur = 1; }
+// ============================================================
+// MY SPACE (room + inventory)
+// ============================================================
+function MySpace({ xpApi }) {
+  const { inv, setInv, room, setRoom, xp } = xpApi;
+  const [bagOpen,setBagOpen]=useState(false);
+  const roomRef = useRef(null);
+  const [drag,setDrag]=useState(null); // {id, source: 'room'|'inv', x, y, offsetX, offsetY}
+ 
+  // Touch/mouse drag handling
+  useEffect(()=>{
+    if(!drag) return;
+    function move(e){
+      const ev = e.touches ? e.touches[0] : e;
+      setDrag(d=>d?{...d,x:ev.clientX,y:ev.clientY}:d);
     }
-    return best;
+    function up(e){
+      const ev = e.changedTouches ? e.changedTouches[0] : e;
+      const x = ev.clientX, y = ev.clientY;
+      // check if dropped on bag icon
+      const bag = document.getElementById("bag-icon");
+      if(bag){
+        const r = bag.getBoundingClientRect();
+        if(x>=r.left && x<=r.right && y>=r.top && y<=r.bottom){
+          // move to inventory
+          if(drag.source==="room"){
+            setRoom(rm=>{
+              const item = rm.find(i=>i.id===drag.id);
+              if(item){ setInv(iv=>[...iv,{id:item.id, level:item.level}]); }
+              return rm.filter(i=>i.id!==drag.id);
+            });
+          }
+          setDrag(null);
+          return;
+        }
+      }
+      // dropped on room?
+      if(roomRef.current){
+        const r = roomRef.current.getBoundingClientRect();
+        if(x>=r.left && x<=r.right && y>=r.top && y<=r.bottom){
+          const px = ((x - r.left - drag.offsetX) / r.width) * 100;
+          const py = ((y - r.top - drag.offsetY) / r.height) * 100;
+          const clampedX = Math.max(0, Math.min(85, px));
+          const clampedY = Math.max(0, Math.min(85, py));
+          if(drag.source==="inv"){
+            // move from inv to room
+            setInv(iv=>{
+              const item = iv.find(i=>i.id===drag.id);
+              if(item){ setRoom(rm=>[...rm,{id:item.id,level:item.level,x:clampedX,y:clampedY}]); }
+              return iv.filter(i=>i.id!==drag.id);
+            });
+          } else {
+            // reposition in room
+            setRoom(rm=>rm.map(i=>i.id===drag.id?{...i,x:clampedX,y:clampedY}:i));
+          }
+        }
+      }
+      setDrag(null);
+    }
+    window.addEventListener("mousemove",move);
+    window.addEventListener("mouseup",up);
+    window.addEventListener("touchmove",move,{passive:false});
+    window.addEventListener("touchend",up);
+    return ()=>{
+      window.removeEventListener("mousemove",move);
+      window.removeEventListener("mouseup",up);
+      window.removeEventListener("touchmove",move);
+      window.removeEventListener("touchend",up);
+    };
+  },[drag]);
+ 
+  function startDrag(e, item, source){
+    e.preventDefault();
+    const ev = e.touches ? e.touches[0] : e;
+    const rect = e.currentTarget.getBoundingClientRect();
+    setDrag({
+      id:item.id, level:item.level, source,
+      x:ev.clientX, y:ev.clientY,
+      offsetX: ev.clientX - rect.left,
+      offsetY: ev.clientY - rect.top,
+      size: rect.width
+    });
   }
-  const longestHabitStreak = habits.reduce((a,h)=>Math.max(a,longestStreak(h.completions)),0);
-  const todayWater = hydroLog.filter(e=>e.date===td).reduce((a,e)=>a+e.ml,0);
-  const ac = COLORS[accent];
-  const pct = xp.level >= MAX_LEVEL ? 100 : Math.round((xp.inLevel/XP_PER_LEVEL)*100);
+ 
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:16}}>
+      <Card style={{textAlign:"center",padding:"10px 16px"}}>
+        <p style={{fontSize:13,color:"#888780",margin:0}}>Level <span style={{color:COLORS.purple.text,fontWeight:500}}>{xp.level}</span> · {xp.xp}/{XP_PER_LEVEL} XP to next</p>
+        <p style={{fontSize:11,color:"#aaa8a2",margin:"4px 0 0"}}>Tap-hold an item to drag · drop on the room or the bag</p>
+      </Card>
+ 
+      {/* The room */}
+      <div ref={roomRef} className="room-floor" style={{position:"relative",width:"100%",aspectRatio:"1/1",borderRadius:20,background:"linear-gradient(180deg, #FBF9F3 0%, #F1EFE8 60%, #E8E6DE 100%)",border:"0.5px solid #d3d1c7",overflow:"hidden",touchAction:"none"}}>
+        {/* wall/floor divider */}
+        <div style={{position:"absolute",left:0,right:0,top:"60%",height:1,background:"#d3d1c7",opacity:0.5}}/>
+        {room.length===0 && <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",color:"#aaa8a2",fontSize:13,textAlign:"center",padding:20}}>Your room is empty.<br/>Open the bag and drag furniture in.</div>}
+        {room.map(item=>(
+          <div key={item.id}
+               className="furn-item"
+               onMouseDown={e=>startDrag(e,item,"room")}
+               onTouchStart={e=>startDrag(e,item,"room")}
+               style={{position:"absolute",left:`${item.x}%`,top:`${item.y}%`,cursor:"grab",opacity:drag&&drag.id===item.id?0.3:1,width:"15%",aspectRatio:"1/1",display:"flex",alignItems:"center",justifyContent:"center",zIndex:2}}>
+            <div style={{width:"100%",height:"100%"}}><FurnSVG level={item.level} size="100%"/></div>
+          </div>
+        ))}
+        {/* Bag icon: bottom-left of the room */}
+        <button id="bag-icon" onClick={()=>setBagOpen(o=>!o)} style={{position:"absolute",left:12,bottom:12,width:46,height:46,borderRadius:"50%",background:bagOpen?COLORS.amber.bg:"#fff",border:`1.5px solid ${bagOpen?COLORS.amber.border:"#d3d1c7"}`,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 2px 6px rgba(0,0,0,0.1)",zIndex:5,padding:0}}>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={COLORS.amber.text} strokeWidth="1.6">
+            <path d="M6 8h12l-1 12H7L6 8z"/>
+            <path d="M9 8V6a3 3 0 0 1 6 0v2"/>
+          </svg>
+          {inv.length>0&&<span style={{position:"absolute",top:-4,right:-4,background:COLORS.coral.mid,color:"#fff",fontSize:10,borderRadius:20,minWidth:18,height:18,padding:"0 5px",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:500}}>{inv.length}</span>}
+        </button>
+      </div>
+ 
+      {bagOpen && <Card>
+        <p style={{fontSize:13,fontWeight:500,color:"#888780",margin:"0 0 12px"}}>Inventory · {inv.length} item{inv.length===1?"":"s"}</p>
+        {inv.length===0 && <p style={{fontSize:13,color:"#aaa8a2",textAlign:"center",padding:"1rem 0"}}>Level up to unlock furniture</p>}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill, minmax(70px, 1fr))",gap:10}}>
+          {inv.map(item=>{
+            const meta = furnitureFor(item.level);
+            return <div key={item.id}
+                 className="furn-item"
+                 onMouseDown={e=>startDrag(e,item,"inv")}
+                 onTouchStart={e=>startDrag(e,item,"inv")}
+                 style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4,padding:8,borderRadius:14,background:COLORS[meta.palette].bg,border:`1px solid ${COLORS[meta.palette].border}`,cursor:"grab",opacity:drag&&drag.id===item.id?0.3:1}}>
+              <FurnSVG level={item.level} size={42}/>
+              <span style={{fontSize:9,color:COLORS[meta.palette].text,textAlign:"center",lineHeight:1.1}}>{meta.name}</span>
+              <span style={{fontSize:9,color:"#888780"}}>Lv {item.level}</span>
+            </div>;
+          })}
+        </div>
+      </Card>}
+ 
+      {/* Drag ghost */}
+      {drag && <div style={{position:"fixed",left:drag.x-drag.offsetX,top:drag.y-drag.offsetY,width:drag.size,height:drag.size,pointerEvents:"none",zIndex:9999,opacity:0.9}}>
+        <FurnSVG level={drag.level} size={drag.size}/>
+      </div>}
+    </div>
+  );
+}
+ 
+// ============================================================
+// PROGRESS
+// ============================================================
+function Progress({ xpApi }) {
+  const { xp } = xpApi;
+  // pull stats from storage
+  const habits = load("pd_habits",[]);
+  const entries = load("pd_time",[]);
+  const hydrationSettings = load("pd_hydration",{portion:250,goal:2000,theme:"teal"});
+  const hydrationLog = load("pd_hydration_log",[]);
+  const td = today();
+ 
+  function streak(c){ let s=0,d=new Date(); while(true){ const ds=d.toISOString().slice(0,10); if(c.includes(ds)){s++;d.setDate(d.getDate()-1);}else break; } return s; }
+  const longestStreak = habits.reduce((a,h)=>Math.max(a,streak(h.completions)),0);
+  const totalFocusSec = entries.reduce((a,e)=>a+e.secs,0);
+  const totalFocusHours = (totalFocusSec/3600).toFixed(1);
+  const waterToday = hydrationLog.filter(e=>e.date===td).reduce((a,e)=>a+e.ml,0);
+  const xpPct = Math.round((xp.xp/XP_PER_LEVEL)*100);
  
   const stats = [
-    { v: totalHours.toFixed(1), suffix:"h", l: "total focus time", c: "purple", icon:"⏱" },
-    { v: longestHabitStreak, suffix:" days", l: "longest habit streak", c: "amber", icon:"🔥" },
-    { v: todayWater, suffix:" ml", l: "water today", c: "teal", icon:"💧" },
-    { v: xp.level, suffix:"", l: "current level", c: "pink", icon:"★" },
+    { label:"Total focus", value:`${totalFocusHours}h`, sub:"all sessions", color:"teal" },
+    { label:"Longest streak", value:`${longestStreak}`, sub:"days", color:"coral" },
+    { label:"Water today", value:`${waterToday}`, sub:`of ${hydrationSettings.goal} ml`, color:"sky" },
+    { label:"Level", value:`${xp.level}`, sub:`of ${MAX_LEVEL}`, color:"purple" },
   ];
  
   return (
     <div style={{display:"flex",flexDirection:"column",gap:16}}>
-      <Card style={{background:ac.bg,border:`1px solid ${ac.border}`}}>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
-          <div>
-            <p style={{fontSize:12,color:ac.text,margin:0,opacity:0.7}}>Your level</p>
-            <p style={{fontSize:32,fontWeight:500,color:ac.text,margin:0,lineHeight:1.1}}>Level {xp.level}</p>
-          </div>
-          <div style={{textAlign:"right"}}>
-            <p style={{fontSize:11,color:ac.text,margin:0,opacity:0.7}}>Total XP</p>
-            <p style={{fontSize:18,fontWeight:500,color:ac.text,margin:0}}>{xp.total}</p>
-          </div>
-        </div>
-        <div className="bar-bg" style={{height:12,borderRadius:20,background:"#e8e6e0",overflow:"hidden",border:`1px solid ${ac.border}`}}>
-          <div style={{height:"100%",width:`${pct}%`,background:ac.mid,borderRadius:20,transition:"width 0.4s"}}/>
-        </div>
-        <p style={{fontSize:12,color:ac.text,marginTop:6,textAlign:"center"}}>
-          {xp.level>=MAX_LEVEL ? "Max level reached!" : `${XP_PER_LEVEL - xp.inLevel} XP until level ${xp.level+1}`}
-        </p>
-      </Card>
- 
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:12}}>
         {stats.map(s=>{
-          const c = COLORS[s.c];
-          return (
-            <Card key={s.l} style={{padding:"14px 16px"}}>
-              <p style={{fontSize:12,color:"#888780",margin:"0 0 4px"}}>{s.l}</p>
-              <div style={{display:"flex",alignItems:"baseline",gap:4}}>
-                <span style={{fontSize:24,fontWeight:500,color:c.text}}>{s.v}</span>
-                <span style={{fontSize:13,color:"#888780"}}>{s.suffix}</span>
-              </div>
-            </Card>
-          );
+          const c = COLORS[s.color];
+          return <Card key={s.label} style={{display:"flex",flexDirection:"column",gap:4,background:c.bg,border:`1px solid ${c.border}`}}>
+            <p style={{fontSize:12,color:c.text,margin:0,opacity:0.8}}>{s.label}</p>
+            <p style={{fontSize:28,fontWeight:500,margin:0,color:c.text}}>{s.value}</p>
+            <p style={{fontSize:11,color:c.text,margin:0,opacity:0.6}}>{s.sub}</p>
+          </Card>;
         })}
       </div>
  
       <Card>
-        <p style={{fontSize:13,fontWeight:500,color:"#888780",margin:"0 0 10px"}}>How to earn XP</p>
-        <div style={{display:"flex",flexDirection:"column",gap:8,fontSize:13,color:"#888780"}}>
-          <div>+{XP_PER_ACTION} XP — finish a focus session</div>
-          <div>+{XP_PER_ACTION} XP — check off a habit</div>
-          <div>+{XP_PER_ACTION} XP — reach your daily water goal</div>
-          <div>+{XP_PER_ACTION} XP — complete a to-do task</div>
+        <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",marginBottom:8}}>
+          <p style={{fontSize:13,fontWeight:500,color:"#888780",margin:0}}>XP to next level</p>
+          <p style={{fontSize:13,color:COLORS.purple.text,margin:0,fontWeight:500}}>{xp.xp} / {XP_PER_LEVEL}</p>
         </div>
-        <p style={{fontSize:12,color:"#888780",marginTop:10}}>Every {XP_PER_LEVEL} XP = 1 level up + 1 new piece of furniture.</p>
+        <div className="bar-bg" style={{height:14,borderRadius:20,background:"#e8e6e0",overflow:"hidden"}}>
+          <div style={{height:"100%",width:`${xpPct}%`,background:`linear-gradient(90deg, ${COLORS.purple.mid}, ${COLORS.pink.mid})`,borderRadius:20,transition:"width 0.4s"}}/>
+        </div>
+        <p style={{fontSize:11,color:"#aaa8a2",marginTop:8,textAlign:"center"}}>
+          {xp.level>=MAX_LEVEL ? "Maximum level reached! ✨" : `${XP_PER_LEVEL-xp.xp} XP until level ${xp.level+1}`}
+        </p>
       </Card>
  
       <Card>
-        <p style={{fontSize:13,fontWeight:500,color:"#888780",margin:"0 0 10px"}}>Inventory</p>
-        <p style={{fontSize:13,color:"#888780"}}>{xp.inventory.length} item{xp.inventory.length===1?"":"s"} unplaced · {Object.keys(xp.placed).length} placed in room</p>
+        <p style={{fontSize:13,fontWeight:500,color:"#888780",margin:"0 0 6px"}}>How XP works</p>
+        <p style={{fontSize:12,color:"#888780",lineHeight:1.5,margin:0}}>
+          You earn {XP_PER_ACTION} XP for each habit checked, todo completed, focus session finished, and the daily water goal reached. Reach {XP_PER_LEVEL} XP to level up and unlock a new piece of furniture. Un-checking returns the XP — no spam.
+        </p>
       </Card>
     </div>
   );
 }
  
-// ---------- My Space (Room) ----------
-function MySpace({ accent, onClose, xp, placeFurniture, movePlaced, returnToInventory }) {
-  const [bagOpen, setBagOpen] = useState(false);
-  const roomRef = useRef(null);
-  const [drag, setDrag] = useState(null); // { source: 'placed'|'inventory', id, furnId, offsetX, offsetY, x, y, overBag }
-  const [bagRect, setBagRect] = useState(null);
-  const bagBtnRef = useRef(null);
- 
-  const ac = COLORS[accent];
- 
-  function startDragPlaced(e, id, furnId) {
-    e.preventDefault();
-    const rect = roomRef.current.getBoundingClientRect();
-    const placed = xp.placed[id];
-    const pt = e.touches ? e.touches[0] : e;
-    setDrag({
-      source: "placed", id, furnId,
-      offsetX: pt.clientX - (rect.left + placed.x),
-      offsetY: pt.clientY - (rect.top + placed.y),
-      x: pt.clientX, y: pt.clientY, overBag: false,
-    });
-  }
-  function startDragInventory(e, invItem) {
-    e.preventDefault();
-    const pt = e.touches ? e.touches[0] : e;
-    setDrag({
-      source: "inventory", id: invItem.id, furnId: invItem.furnId,
-      offsetX: 30, offsetY: 30,
-      x: pt.clientX, y: pt.clientY, overBag: false,
-    });
-    setBagOpen(false);
-  }
- 
-  useEffect(()=>{
-    if (!drag) return;
-    function updateBagRect() {
-      if (bagBtnRef.current) setBagRect(bagBtnRef.current.getBoundingClientRect());
-    }
-    updateBagRect();
-    function onMove(e) {
-      const pt = e.touches ? e.touches[0] : e;
-      const br = bagBtnRef.current?.getBoundingClientRect();
-      let overBag = false;
-      if (br) {
-        const cx = br.left + br.width/2, cy = br.top + br.height/2;
-        const dx = pt.clientX - cx, dy = pt.clientY - cy;
-        if (Math.sqrt(dx*dx + dy*dy) < 36) overBag = true;
-      }
-      setDrag(d => d ? { ...d, x: pt.clientX, y: pt.clientY, overBag } : d);
-      if (e.touches) e.preventDefault();
-    }
-    function onUp(e) {
-      setDrag(curDrag => {
-        if (!curDrag) return null;
-        const rect = roomRef.current?.getBoundingClientRect();
-        const pt = (e.changedTouches && e.changedTouches[0]) ? e.changedTouches[0] : e;
-        if (curDrag.overBag) {
-          if (curDrag.source === "placed") returnToInventory(curDrag.id);
-          // if from inventory and dropped on bag, do nothing (stays in inventory)
-        } else if (rect && pt.clientX >= rect.left && pt.clientX <= rect.right && pt.clientY >= rect.top && pt.clientY <= rect.bottom) {
-          const x = pt.clientX - rect.left - curDrag.offsetX;
-          const y = pt.clientY - rect.top - curDrag.offsetY;
-          const clampedX = Math.max(0, Math.min(rect.width - 60, x));
-          const clampedY = Math.max(0, Math.min(rect.height - 60, y));
-          if (curDrag.source === "inventory") {
-            placeFurniture(curDrag.id, clampedX, clampedY);
-          } else {
-            movePlaced(curDrag.id, clampedX, clampedY);
-          }
-        }
-        return null;
-      });
-    }
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-    window.addEventListener("touchmove", onMove, { passive: false });
-    window.addEventListener("touchend", onUp);
-    return ()=>{
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-      window.removeEventListener("touchmove", onMove);
-      window.removeEventListener("touchend", onUp);
-    };
-  },[drag, placeFurniture, movePlaced, returnToInventory]);
- 
-  const placedEntries = Object.entries(xp.placed);
-  const pct = xp.level >= MAX_LEVEL ? 100 : Math.round((xp.inLevel/XP_PER_LEVEL)*100);
- 
-  return (
-    <div style={{position:"fixed",inset:0,background:"#f5f4f0",zIndex:100,display:"flex",flexDirection:"column"}}>
-      <div style={{padding:"16px 20px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,borderBottom:"0.5px solid #d3d1c7"}}>
-        <div>
-          <p style={{fontSize:11,color:"#888780",margin:0}}>My space</p>
-          <p style={{fontSize:16,fontWeight:500,margin:0}}>Level {xp.level} · {xp.inventory.length + placedEntries.length}/{MAX_LEVEL} items</p>
-        </div>
-        <div style={{flex:1,maxWidth:200}}>
-          <div className="bar-bg" style={{height:8,borderRadius:20,background:"#e8e6e0",overflow:"hidden"}}>
-            <div style={{height:"100%",width:`${pct}%`,background:ac.mid,borderRadius:20,transition:"width 0.4s"}}/>
-          </div>
-          <p style={{fontSize:10,color:"#888780",margin:"4px 0 0",textAlign:"center"}}>{xp.level>=MAX_LEVEL?"Max":`${XP_PER_LEVEL-xp.inLevel} XP to level ${xp.level+1}`}</p>
-        </div>
-        <button onClick={onClose} style={{background:"transparent",border:"1px solid #d3d1c7",borderRadius:"50%",width:34,height:34,cursor:"pointer",fontSize:18,color:"#888780",display:"flex",alignItems:"center",justifyContent:"center",padding:0}}>×</button>
-      </div>
- 
-      <div style={{flex:1,padding:"20px",overflow:"hidden",display:"flex",flexDirection:"column"}}>
-        <div ref={roomRef} className="room-floor" style={{
-          flex:1,
-          background:"linear-gradient(180deg, #f0e9d8 0%, #e3d7b8 100%)",
-          borderRadius:24,
-          border:"0.5px solid #d3d1c7",
-          position:"relative",
-          overflow:"hidden",
-          boxShadow:"inset 0 6px 12px rgba(0,0,0,0.04)",
-        }}>
-          {/* back wall decoration: stripes */}
-          <div style={{position:"absolute",top:0,left:0,right:0,height:"32%",background:"linear-gradient(180deg, #fef8e8 0%, #f5ead0 100%)",borderBottom:"1px solid rgba(120,100,60,0.15)"}}/>
- 
-          {placedEntries.length === 0 && xp.inventory.length === 0 && (
-            <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:8,color:"#888780",fontSize:14,textAlign:"center",padding:"0 24px"}}>
-              <p>Your room is empty.</p>
-              <p style={{fontSize:12}}>Earn XP by finishing sessions, checking habits, drinking water, or completing to-dos. Each level rewards a piece of furniture.</p>
-            </div>
-          )}
-          {placedEntries.length === 0 && xp.inventory.length > 0 && (
-            <div style={{position:"absolute",top:"40%",left:0,right:0,textAlign:"center",color:"#888780",fontSize:13,padding:"0 24px"}}>
-              <p>Open your bag and drag items into the room.</p>
-            </div>
-          )}
- 
-          {placedEntries.map(([id, p])=>{
-            if (drag && drag.source==="placed" && drag.id===id) return null; // hidden during drag (rendered as overlay)
-            return (
-              <div key={id}
-                className="furn-item"
-                onMouseDown={(e)=>startDragPlaced(e,id,p.furnId)}
-                onTouchStart={(e)=>startDragPlaced(e,id,p.furnId)}
-                style={{
-                  position:"absolute",
-                  left:p.x, top:p.y,
-                  width:60, height:60,
-                  cursor:"grab",
-                }}
-                title={FURNITURE[p.furnId-1]?.name || ""}
-              >
-                <Furniture furnId={p.furnId}/>
-              </div>
-            );
-          })}
-        </div>
- 
-        {/* drag overlay */}
-        {drag && (
-          <div style={{
-            position:"fixed",
-            left: drag.x - drag.offsetX,
-            top: drag.y - drag.offsetY,
-            width:60, height:60,
-            pointerEvents:"none",
-            zIndex:200,
-            opacity: drag.overBag ? 0.4 : 0.9,
-            filter: drag.overBag ? "grayscale(0.5)" : "drop-shadow(0 6px 12px rgba(0,0,0,0.2))",
-          }}>
-            <Furniture furnId={drag.furnId}/>
-          </div>
-        )}
-      </div>
- 
-      {/* backpack button */}
-      <button ref={bagBtnRef} onClick={()=>!drag && setBagOpen(o=>!o)} style={{
-        position:"fixed",
-        bottom:20, left:20,
-        width:56, height:56, borderRadius:"50%",
-        background: drag?.overBag ? COLORS.coral.mid : (bagOpen?ac.mid:"#fff"),
-        border: `1.5px solid ${drag?.overBag?COLORS.coral.border:(bagOpen?ac.border:"#d3d1c7")}`,
-        boxShadow:"0 4px 14px rgba(0,0,0,0.1)",
-        cursor:"pointer",
-        display:"flex",alignItems:"center",justifyContent:"center",
-        padding:0,
-        zIndex:150,
-        transition:"all 0.15s",
-      }} aria-label="Inventory">
-        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke={drag?.overBag||bagOpen?"#fff":"#888780"} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M4 10 Q4 6, 8 6 L8 5 Q8 3, 12 3 Q16 3, 16 5 L16 6 Q20 6, 20 10 L20 19 Q20 21, 18 21 L6 21 Q4 21, 4 19 Z"/>
-          <path d="M9 6 L9 4 Q9 3, 12 3 Q15 3, 15 4 L15 6"/>
-          <line x1="4" y1="12" x2="20" y2="12"/>
-        </svg>
-        {xp.inventory.length>0 && !bagOpen && (
-          <span style={{
-            position:"absolute",
-            top:-2, right:-2,
-            background:ac.mid,
-            color:"#fff",
-            borderRadius:"50%",
-            width:20, height:20,
-            fontSize:11, fontWeight:600,
-            display:"flex",alignItems:"center",justifyContent:"center",
-            border:"2px solid #fff",
-          }}>{xp.inventory.length}</span>
-        )}
-      </button>
- 
-      {/* inventory drawer */}
-      {bagOpen && (
-        <div style={{
-          position:"fixed",
-          bottom:88, left:20,
-          width:"calc(100% - 40px)", maxWidth:380,
-          background:"#fff",
-          border:"0.5px solid #d3d1c7",
-          borderRadius:20,
-          padding:"14px 16px",
-          boxShadow:"0 6px 20px rgba(0,0,0,0.12)",
-          zIndex:140,
-          maxHeight:"55vh",
-          display:"flex",flexDirection:"column",
-        }}>
-          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
-            <p style={{fontSize:13,fontWeight:500,color:"#888780",margin:0}}>Inventory · {xp.inventory.length}</p>
-            <button onClick={()=>setBagOpen(false)} style={{background:"transparent",border:"none",cursor:"pointer",color:"#888780",fontSize:18,padding:0}}>×</button>
-          </div>
-          {xp.inventory.length === 0 ? (
-            <p style={{fontSize:13,color:"#888780",textAlign:"center",padding:"1.5rem 0"}}>Nothing yet. Level up to earn furniture.</p>
-          ) : (
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill, minmax(70px, 1fr))",gap:8,overflowY:"auto",paddingRight:4}}>
-              {xp.inventory.map(item=>(
-                <div key={item.id}
-                  className="furn-item"
-                  onMouseDown={(e)=>startDragInventory(e,item)}
-                  onTouchStart={(e)=>startDragInventory(e,item)}
-                  style={{
-                    background:"#f1efe8",
-                    borderRadius:14,
-                    aspectRatio:"1/1",
-                    cursor:"grab",
-                    display:"flex",alignItems:"center",justifyContent:"center",
-                    position:"relative",
-                  }}
-                  title={FURNITURE[item.furnId-1]?.name || ""}
-                >
-                  <Furniture furnId={item.furnId}/>
-                  <span style={{position:"absolute",bottom:2,right:4,fontSize:9,color:"#888780"}}>L{item.furnId}</span>
-                </div>
-              ))}
-            </div>
-          )}
-          <p style={{fontSize:11,color:"#888780",marginTop:10,textAlign:"center"}}>Drag items into your room. Drag from your room onto the bag to put them back.</p>
-        </div>
-      )}
-    </div>
-  );
-}
- 
-// ---------- App ----------
+// ============================================================
+// APP SHELL
+// ============================================================
 function App() {
-  const [tab,setTab]=useState(()=>load("pd_tab","todos"));
-  const [accent,setAccent]=useState(()=>load("pd_accent","purple"));
-  const [spaceOpen,setSpaceOpen]=useState(false);
-  const xpHook = useXP();
-  const { xp, award, placeFurniture, movePlaced, returnToInventory } = xpHook;
- 
-  useEffect(()=>save("pd_tab",tab),[tab]);
-  useEffect(()=>save("pd_accent",accent),[accent]);
- 
-  const ac = COLORS[accent];
- 
-  const tabs = [
-    {key:"todos", label:"To-do"},
-    {key:"time", label:"Time"},
-    {key:"habits", label:"Habits"},
-    {key:"hydration", label:"Hydration"},
-    {key:"mood", label:"Mood"},
-    {key:"progress", label:"Progress"},
-  ];
- 
+  const [tab,setTab]=useState("todos");
+  const xpApi = useXP();
+  const awards = useAwards();
+  // expose xpApi via state-bag for child pages
   return (
-    <div style={{maxWidth:660,margin:"0 auto",padding:"1.5rem 1rem 4rem"}}>
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"1rem",gap:10}}>
+    <div style={{maxWidth:660,margin:"0 auto",padding:"1.5rem 1rem",position:"relative"}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"1.25rem"}}>
         <h2 style={{fontSize:20,fontWeight:500,margin:0}}>My dashboard</h2>
-        <div style={{display:"flex",alignItems:"center",gap:8}}>
-          <SettingsButton accent={accent} onChangeTheme={setAccent}/>
-          {/* my space access circle */}
-          <button onClick={()=>setSpaceOpen(true)} aria-label="My space" style={{
-            background:ac.bg,
-            border:`1.5px solid ${ac.border}`,
-            borderRadius:"50%",
-            width:38, height:38,
-            cursor:"pointer",
-            display:"flex",alignItems:"center",justifyContent:"center",
-            padding:0,
-            color:ac.text,
-            position:"relative",
-          }}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M3 12 L12 4 L21 12"/>
-              <path d="M5 10 L5 20 L19 20 L19 10"/>
-              <rect x="10" y="14" width="4" height="6"/>
-            </svg>
-            {xp.inventory.length>0 && (
-              <span style={{
-                position:"absolute",top:-3,right:-3,
-                background:COLORS.coral.mid,color:"#fff",
-                borderRadius:"50%",width:16,height:16,
-                fontSize:10,fontWeight:600,
-                display:"flex",alignItems:"center",justifyContent:"center",
-                border:"2px solid #f5f4f0",
-              }}>{xp.inventory.length}</span>
-            )}
-          </button>
+        <button onClick={()=>setTab("space")} className={xpApi.flash?"level-up-flash":""}
+          style={{width:46,height:46,borderRadius:"50%",border:tab==="space"?`2px solid ${COLORS.purple.mid}`:"1.5px solid #d3d1c7",background:tab==="space"?COLORS.purple.bg:"#fff",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",position:"relative"}}>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={COLORS.purple.text} strokeWidth="1.6">
+            <path d="M3 11l9-7 9 7v9a2 2 0 0 1-2 2h-4v-7h-6v7H5a2 2 0 0 1-2-2v-9z"/>
+          </svg>
+          {xpApi.flash && <span style={{position:"absolute",top:-6,right:-6,background:COLORS.amber.mid,color:"#fff",fontSize:9,borderRadius:20,padding:"2px 6px",fontWeight:500,whiteSpace:"nowrap"}}>Lv {xpApi.flash}!</span>}
+        </button>
+      </div>
+ 
+      {/* XP bar always visible */}
+      <div style={{marginBottom:"1rem",display:"flex",alignItems:"center",gap:10}}>
+        <span style={{fontSize:11,color:"#888780",fontWeight:500,minWidth:42}}>Lv {xpApi.xp.level}</span>
+        <div className="bar-bg" style={{flex:1,height:6,borderRadius:20,background:"#e8e6e0",overflow:"hidden"}}>
+          <div style={{height:"100%",width:`${(xpApi.xp.xp/XP_PER_LEVEL)*100}%`,background:`linear-gradient(90deg, ${COLORS.purple.mid}, ${COLORS.pink.mid})`,borderRadius:20,transition:"width 0.4s"}}/>
         </div>
+        <span style={{fontSize:11,color:"#888780",minWidth:48,textAlign:"right"}}>{xpApi.xp.xp}/{XP_PER_LEVEL}</span>
       </div>
  
-      <div className="tab-bar" style={{display:"flex",gap:4,background:"#ebe9e2",borderRadius:40,padding:"5px 6px",marginBottom:"1.25rem",overflowX:"auto",flexWrap:"nowrap"}}>
-        {tabs.map(t=>(
-          <Tab key={t.key} label={t.label} active={tab===t.key} onClick={()=>setTab(t.key)} accent={accent}/>
-        ))}
+      <div className="tab-bar" style={{display:"flex",gap:4,background:"#ebe9e2",borderRadius:40,padding:"5px 6px",marginBottom:"1.25rem",overflowX:"auto",flexWrap:"wrap"}}>
+        <Tab label="To-do" active={tab==="todos"} onClick={()=>setTab("todos")} />
+        <Tab label="Time" active={tab==="time"} onClick={()=>setTab("time")} />
+        <Tab label="Habits" active={tab==="habits"} onClick={()=>setTab("habits")} />
+        <Tab label="Hydration" active={tab==="hydration"} onClick={()=>setTab("hydration")} />
+        <Tab label="Mood" active={tab==="mood"} onClick={()=>setTab("mood")} />
+        <Tab label="My space" active={tab==="space"} onClick={()=>setTab("space")} />
+        <Tab label="Progress" active={tab==="progress"} onClick={()=>setTab("progress")} />
       </div>
- 
-      {tab==="todos"&&<Todos accent={accent} setAccent={setAccent} award={award}/>}
-      {tab==="time"&&<TimeTracker accent={accent} award={award}/>}
-      {tab==="habits"&&<Habits accent={accent} award={award}/>}
-      {tab==="hydration"&&<Hydration accent={accent} award={award}/>}
-      {tab==="mood"&&<MoodLogger accent={accent} award={award}/>}
-      {tab==="progress"&&<Progress accent={accent} xp={xp}/>}
- 
-      {spaceOpen && <MySpace
-        accent={accent}
-        onClose={()=>setSpaceOpen(false)}
-        xp={xp}
-        placeFurniture={placeFurniture}
-        movePlaced={movePlaced}
-        returnToInventory={returnToInventory}
-      />}
+      {tab==="todos"&&<Todos xpApi={xpApi} awards={awards}/>}
+      {tab==="time"&&<TimeTracker xpApi={xpApi} awards={awards}/>}
+      {tab==="habits"&&<Habits xpApi={xpApi} awards={awards}/>}
+      {tab==="hydration"&&<Hydration xpApi={xpApi} awards={awards}/>}
+      {tab==="mood"&&<MoodLogger/>}
+      {tab==="space"&&<MySpace xpApi={xpApi}/>}
+      {tab==="progress"&&<Progress xpApi={xpApi}/>}
     </div>
   );
 }
